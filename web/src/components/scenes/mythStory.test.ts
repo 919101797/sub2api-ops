@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { expect, it } from 'vitest'
 import { creationStory, mendingStory, mendingStar, repairAt, mythFrame, creationDust } from './mythStory'
 
@@ -25,12 +27,17 @@ it('场景-008-38：托星、炼石、织补有先后，裂口沿光丝抵达方
 it('场景-008-37/38：同一星尘跨越所有交接点无跳变，反向取样严格沿原路径', () => {
   for (const sample of [creationDust, mendingStar]) for (let id = 0; id < 48; id++) {
     const forward = Array.from({ length: 1001 }, (_, i) => sample(id, i / 1000))
+    // Keep all 1,001 samples while asserting each trajectory as a group.
+    // Hundreds of thousands of individual matchers can exceed CI's timeout.
+    let maxStep = 0
     for (let i = 1; i < forward.length; i++) {
       const a = forward[i - 1]!, b = forward[i]!
-      expect(Number.isFinite(b.x + b.y)).toBe(true)
-      expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeLessThan(0.055)
-      expect(sample(id, i / 1000)).toEqual(b)
+      maxStep = Math.max(maxStep, Math.hypot(b.x - a.x, b.y - a.y))
     }
+    expect(forward.every((point) => Number.isFinite(point.x + point.y))).toBe(true)
+    expect(maxStep).toBeLessThan(0.055)
+    const backward = Array.from({ length: 1001 }, (_, i) => sample(id, (1000 - i) / 1000))
+    expect(backward).toEqual([...forward].reverse())
     for (const p of [0.18, 0.32, 0.42, 0.58, 0.72, 0.88]) {
       const a = sample(id, p - 0.00001), b = sample(id, p + 0.00001)
       expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeLessThan(0.001)
