@@ -27,3 +27,5 @@ backups/
 
 .git/
 .gitlab/
+
+internal/
