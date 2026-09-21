@@ -2,6 +2,10 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AppearanceProvider, SceneSwitcher, useAppearance } from './Appearance'
 import { VisualHero } from './VisualHero'
+import { drawMoon, drawGalaxy, drawNebula } from './scenes/cosmic'
+// Lifecycle assertions exercise the real interaction and scheduling logic.
+// Pixel drawing is covered by scene tests and browser visual verification.
+vi.mock('./scenes/cosmic', () => ({ drawMoon: vi.fn(), drawGalaxy: vi.fn(), drawNebula: vi.fn() }))
 const textureLoading = vi.hoisted(() => ({ prepare: vi.fn<() => Promise<void[]>>(() => Promise.resolve([])) }))
 
 afterEach(() => {
@@ -117,6 +121,8 @@ function ToggleTheme() {
 }
 
 it.each(['moon', 'nebula', 'galaxy', 'quantum', 'aurora', 'tidal'] as const)('场景-008-26/29：%s 由操作推进、回退，落稳休眠，切换释放', async (style) => {
+  const renderer = style === 'moon' ? drawMoon : style === 'galaxy' ? drawGalaxy : style === 'nebula' ? drawNebula : null
+  const drawsBefore = renderer ? vi.mocked(renderer).mock.calls.length : 0
   let id = 0,
     time = performance.now()
   const frames = new Map<number, FrameRequestCallback>()
@@ -166,6 +172,7 @@ it.each(['moon', 'nebula', 'galaxy', 'quantum', 'aurora', 'tidal'] as const)('�
   await act(async () => {})
   advance(400)
   expect(Number(hero.dataset.sceneProgress)).toBe(0)
+  if (renderer) expect(vi.mocked(renderer).mock.calls.length).toBeGreaterThan(drawsBefore)
   expect(frames.size).toBe(0)
   const center: [number, number] = style === 'moon' ? [1248, 220] : style === 'galaxy' || style === 'nebula' ? [1184, style === 'galaxy' ? 340 : 300] : [1232, 310]
   act(() => window.dispatchEvent(new MouseEvent('pointermove', { clientX: center[0], clientY: center[1] })))
