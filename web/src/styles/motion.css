@@ -1,0 +1,42 @@
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+@keyframes page-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes page-next { from { opacity: .4; transform: translateX(var(--page-enter-offset, 18px)); } to { opacity: 1; transform: translateX(0); } }
+@keyframes page-previous { from { opacity: .4; transform: translateX(var(--page-enter-offset, -18px)); } to { opacity: 1; transform: translateX(0); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes scale-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes bar-enter { from { transform: scaleX(0); } }
+@keyframes drawer-in { from { opacity: .3; transform: translateX(36px); } }
+@keyframes skeleton-pulse { 50% { opacity: .5; } }
+.workspace__inner { animation: page-enter 320ms var(--ease-spring) both; }
+.workspace__inner--enter-next { animation-name: page-next; }
+.workspace__inner--enter-previous { animation-name: page-previous; }
+.workspace__inner--dragging { animation: none; transform: translateX(var(--page-drag-x, 0px)); opacity: var(--page-drag-opacity, 1); }
+.workspace__inner--snapping { animation: none; transform: translateX(var(--page-drag-x, 0px)); opacity: var(--page-drag-opacity, 1); transition: transform 360ms var(--ease-spring), opacity 360ms; }
+.metric-card { animation: page-enter 420ms var(--ease-spring) both; }
+.metric-card:nth-child(2) { animation-delay: 35ms; }.metric-card:nth-child(3) { animation-delay: 70ms; }.metric-card:nth-child(4) { animation-delay: 105ms; }
+.pressure-track i, .allocation-track i { animation: bar-enter 720ms var(--ease-spring) both; }
+.dialog-layer { animation: fade-in 200ms ease both; }
+.dialog-panel { animation: scale-in 260ms var(--ease-spring) both; }
+.dialog-layer--drawer .dialog-panel, .dialog-layer--wide .dialog-panel { animation: drawer-in 360ms var(--ease-spring) both; }
+.dialog-layer.is-closing { animation: fade-in 180ms ease reverse both; }
+.dialog-layer.is-closing .dialog-panel { animation: scale-in 180ms ease reverse both; }
+.dialog-layer--drawer.is-closing .dialog-panel, .dialog-layer--wide.is-closing .dialog-panel { animation: drawer-in 180ms ease reverse both; }
+.appearance-popover, .prompt-time-range__popover { animation: scale-in 220ms var(--ease-spring) both; }
+.event-list, [role="tabpanel"]:not([hidden]), .save-notice, .form-error, .job-notice, .settings-draft-bar { animation: page-enter 260ms var(--ease-spring) both; }
+.login-context__statement, .login-card { animation: page-enter 600ms var(--ease-spring) both; }
+.login-card { animation-delay: 80ms; }
+button svg, summary svg { transition: transform 200ms var(--ease-spring); }
+details::details-content { height: 0; overflow: clip; transition: height 300ms var(--ease-spring), content-visibility 300ms allow-discrete; interpolate-size: allow-keywords; }
+details[open]::details-content { height: auto; }
+details[open] > summary .user-analytics__chevron { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, *::details-content { animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  .workspace__inner:not(.workspace__inner--dragging), .metric-card, .dialog-panel { transform: none !important; }
+}
+
+@keyframes chart-reveal { from { clip-path: inset(0 100% 0 0); opacity: .3; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+.prompt-native-chart svg { animation: chart-reveal 650ms var(--ease-out) both; }
+.prompt-list { transition: opacity 180ms; }.prompt-list[aria-busy="true"] { opacity: .6; }
+
+body, .workspace-bar, .mobile-bar, .panel, .metric-card, .account-link, .settings-section, .prompt-row, .dialog-panel { transition-property: background-color, border-color, color, box-shadow; transition-duration: 180ms; transition-timing-function: ease; }

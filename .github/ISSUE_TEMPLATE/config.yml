@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 私密安全报告
+    url: https://github.com/919101797/sub2api-ops/security/advisories/new
+    about: 漏洞、凭据泄漏与其他敏感安全问题请勿公开提交。

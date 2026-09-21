@@ -1,0 +1,32 @@
+name: 问题反馈
+description: 提交可以复现的 Ops 问题
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "请先查看排障文档。安全漏洞请使用 Security → Report a vulnerability；不要提交真实配置、密钥或用户内容。"
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: Ops 提交或版本、Sub2API 版本、Node.js、系统、浏览器与运行方式。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现步骤
+      description: 使用虚构数据说明操作步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏错误信息或截图
+      description: 删除 API Key、Cookie、邮箱、域名、用户输入和其他私人信息。

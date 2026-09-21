@@ -1,0 +1,82 @@
+/* Exposure is the same normalized eclipse phase used by the celestial renderer. */
+:root { --eclipse-darkness: 0%; }
+:root[data-style="orbital"] {
+  --canvas: color-mix(in srgb, #28211d, #06090f var(--eclipse-darkness));
+  --paper: color-mix(in srgb, #49392ee8, #11151def var(--eclipse-darkness));
+  --surface-soft: color-mix(in srgb, #514035dc, #191e29e8 var(--eclipse-darkness));
+  --surface-hover: color-mix(in srgb, #604a39, #252c3a var(--eclipse-darkness));
+  --surface-control: color-mix(in srgb, #392d25, #111720 var(--eclipse-darkness));
+  --surface-muted: color-mix(in srgb, #49392e, #1c2431 var(--eclipse-darkness));
+  --surface-subtle: color-mix(in srgb, #403128e8, #141a24ed var(--eclipse-darkness));
+  --surface-strong: color-mix(in srgb, #67503d, #2c3748 var(--eclipse-darkness));
+  --surface-drawer: color-mix(in srgb, #372c25, #121721 var(--eclipse-darkness));
+  --surface-glass: var(--paper);
+  --ink: color-mix(in srgb, #fff4e7, #e2e8f4 var(--eclipse-darkness));
+  --text-body: color-mix(in srgb, #e9d8c6, #c1ccdc var(--eclipse-darkness));
+  --muted: color-mix(in srgb, #c9b5a1, #9faec5 var(--eclipse-darkness));
+  --faint: var(--muted);
+  --accent: color-mix(in srgb, #ffca98, #bacfed var(--eclipse-darkness));
+  --accent-hover: color-mix(in srgb, #ffdfb8, #e1ebff var(--eclipse-darkness));
+  --accent-secondary: color-mix(in srgb, #d88e60, #607ba7 var(--eclipse-darkness));
+  --accent-text-soft: color-mix(in srgb, #d9b696, #a5bad9 var(--eclipse-darkness));
+  --accent-border: color-mix(in srgb, #9a7757, #3c4d68 var(--eclipse-darkness));
+  --accent-border-strong: color-mix(in srgb, #d1a170, #6f89b0 var(--eclipse-darkness));
+  --olive-dark: var(--accent);
+  --olive-soft: color-mix(in srgb, #ffc48b25, #9fbfea18 var(--eclipse-darkness));
+  --on-solid: color-mix(in srgb, #2f1a0b, #101a2a var(--eclipse-darkness));
+  --line: color-mix(in srgb, #f5c49438, #9db6dd26 var(--eclipse-darkness));
+  --line-strong: color-mix(in srgb, #ffd4a764, #bdd6fd47 var(--eclipse-darkness));
+  --input-border-hover: var(--accent-border-strong);
+  --track: color-mix(in srgb, #eebc8529, #a8c6ec1a var(--eclipse-darkness));
+  --skeleton: var(--surface-muted); --skeleton-active: var(--surface-strong);
+  --chart-guide: var(--line); --neutral-series: var(--muted);
+  --scene-left: color-mix(in srgb, #28211deb, #06090ffa var(--eclipse-darkness));
+  --scene-floor: color-mix(in srgb, #28211d55, #06090fbb var(--eclipse-darkness));
+  --ambient-surface: color-mix(in srgb, #b8875140, #19283e80 var(--eclipse-darkness));
+  --ambient-light: color-mix(in srgb, #e3a16340, #819bb411 var(--eclipse-darkness));
+  --shadow-soft: 0 8px 28px #0001, inset 0 1px 0 var(--line);
+  --shadow-overlay: 0 24px 100px #0008, inset 0 1px 0 var(--line-strong);
+}
+:root[data-theme="light"][data-style="orbital"] {
+  --canvas: color-mix(in srgb, #f3e7d4, #939dad var(--eclipse-darkness));
+  --paper: color-mix(in srgb, #fff9eeeF, #b5bdcbee var(--eclipse-darkness));
+  --surface-soft: color-mix(in srgb, #f5e8d7ed, #a6b1c2ed var(--eclipse-darkness));
+  --surface-hover: color-mix(in srgb, #fffaf0, #cbd3df var(--eclipse-darkness));
+  --surface-control: color-mix(in srgb, #fffaf1, #c0c8d6 var(--eclipse-darkness));
+  --surface-muted: color-mix(in srgb, #ebdbc5, #a0adbf var(--eclipse-darkness));
+  --surface-subtle: color-mix(in srgb, #f5eadb, #b0bac9 var(--eclipse-darkness));
+  --surface-strong: color-mix(in srgb, #dbc4a8, #8c9aae var(--eclipse-darkness));
+  --surface-drawer: color-mix(in srgb, #f9efe0, #b9c2d0 var(--eclipse-darkness));
+  --ink: color-mix(in srgb, #2e241b, #162337 var(--eclipse-darkness));
+  --text-body: color-mix(in srgb, #544335, #243448 var(--eclipse-darkness));
+  --muted: color-mix(in srgb, #75604b, #203147 var(--eclipse-darkness));
+  --accent: color-mix(in srgb, #835026, #1b3558 var(--eclipse-darkness));
+  --accent-hover: color-mix(in srgb, #5a3213, #163358 var(--eclipse-darkness));
+  --accent-secondary: color-mix(in srgb, #b88350, #526f96 var(--eclipse-darkness));
+  --accent-text-soft: var(--accent);
+  --accent-border: color-mix(in srgb, #c7a37c, #748cae var(--eclipse-darkness));
+  --accent-border-strong: color-mix(in srgb, #9e7344, #4d6b92 var(--eclipse-darkness));
+  --olive-soft: color-mix(in srgb, #c18e4e26, #294c7322 var(--eclipse-darkness));
+  --on-solid: #fffaf2;
+  --line: color-mix(in srgb, #88623c30, #28405c36 var(--eclipse-darkness));
+  --line-strong: color-mix(in srgb, #89634057, #314f7770 var(--eclipse-darkness));
+  --track: color-mix(in srgb, #d9c5a8, #8194af var(--eclipse-darkness));
+  --scene-left: color-mix(in srgb, #f3e7d4f2, #939dadef var(--eclipse-darkness));
+  --scene-floor: color-mix(in srgb, #f3e7d4aa, #939daddd var(--eclipse-darkness));
+  --ambient-surface: color-mix(in srgb, #fff3ce8c, #8399b650 var(--eclipse-darkness));
+  --ambient-light: color-mix(in srgb, #ffe7b530, #6982b530 var(--eclipse-darkness));
+  --shadow-overlay: 0 24px 100px #20273935, inset 0 1px 0 var(--line-strong);
+}
+:root[data-style="orbital"] .scene-depth {
+  background: radial-gradient(ellipse at 77% 31%, var(--ambient-light), transparent 72%);
+}
+:root[data-style="orbital"] .allocation-panel {
+  background: linear-gradient(135deg, var(--ambient-surface), var(--paper) 65%);
+  box-shadow: inset 0 1px 0 var(--line-strong), 0 30px 80px #0002;
+}
+:root[data-style="orbital"] .sidebar { box-shadow: 0 18px 60px #0002, inset 0 1px 0 var(--line-strong); }
+:root[data-style="orbital"] .brand-mark { color: var(--accent); }
+
+:root[data-theme="light"][data-style="orbital"] .metric-card--accent {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 18px;
+}

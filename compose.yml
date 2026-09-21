@@ -1,0 +1,89 @@
+name: sub2api-quota-sync
+
+services:
+  operations-console:
+    image: sub2api-operations-console:3.6.0
+    container_name: sub2api-operations-console
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      CONFIG_PATH: /app/config.json
+      STATE_PATH: /data/state.json
+      PROMPT_MEDIA_PATH: /data/prompt-media
+      HOST: 0.0.0.0
+      PORT: 8080
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
+      COOKIE_PATH: /ops
+      COOKIE_SECURE: "true"
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "127.0.0.1:${OPS_HOST_PORT:-3002}:8080"
+    volumes:
+      - ./config.json:/app/config.json
+      - ./data:/data
+    networks:
+      - sub2api-network
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.status===200||r.status===503?0:1)).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  ws-audit-relay:
+    image: sub2api-operations-console:3.6.0
+    container_name: sub2api-ws-audit-relay
+    command: ["node", "dist/server/ws-relay/index.js"]
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      WS_RELAY_HOST: 0.0.0.0
+      WS_RELAY_PORT: 8090
+      WS_RELAY_UPSTREAM_ORIGIN: ${WS_RELAY_UPSTREAM_ORIGIN:-ws://sub2api:8080}
+      WS_AUDIT_CAPTURE_URL: http://operations-console:8080/internal/prompts/capture/ws
+      WS_AUDIT_OUTBOX_PATH: /data/outbox
+      WS_AUDIT_OUTBOX_MAX_BYTES: 536870912
+      WS_RELAY_MAX_MESSAGE_BYTES: 16777216
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "127.0.0.1:${WS_RELAY_HOST_PORT:-3003}:8090"
+    volumes:
+      - ./data/ws-audit-outbox:/data/outbox
+    networks:
+      - sub2api-network
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      operations-console:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 64
+
+networks:
+  sub2api-network:
+    external: true
+    name: ${SUB2API_DOCKER_NETWORK:-sub2api_default}

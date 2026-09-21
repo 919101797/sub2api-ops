@@ -1,0 +1,70 @@
+{
+  "name": "sub2api-operations-console",
+  "version": "3.6.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "clean": "node -e \"import('node:fs').then(({rmSync}) => rmSync('dist', {recursive:true, force:true}))\"",
+    "build": "npm run clean && npm run build:web && npm run build:server",
+    "build:web": "vite build",
+    "build:server": "tsc -p tsconfig.server.json && node scripts/copy-prompt-audit-schema.mjs",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run && npm run test:compression",
+    "test:compression": "node --test deploy/codex-compression-proxy.test.mjs",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/helmet": "^13.1.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/secure-session": "^8.3.0",
+    "@fastify/static": "^10.1.3",
+    "@icons-pack/react-simple-icons": "^13.15.1",
+    "@marsidev/react-turnstile": "^1.6.0",
+    "@tanstack/react-query": "^5.101.4",
+    "chinese-days": "^1.5.9",
+    "fastify": "^5.12.0",
+    "lucide-react": "^1.33.0",
+    "motion": "13.2.0",
+    "ogl": "1.0.11",
+    "pg": "^8.23.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
+    "react-select": "^5.10.2",
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.2.0",
+    "@types/pg": "^8.21.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^6.0.5",
+    "concurrently": "^9.2.1",
+    "jsdom": "^30.0.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "description": "独立的 Sub2API 运维控制台：额度自动化、用量分析与输入审计",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/919101797/sub2api-ops.git"
+  },
+  "homepage": "https://github.com/919101797/sub2api-ops#readme",
+  "bugs": {
+    "url": "https://github.com/919101797/sub2api-ops/issues"
+  }
+}

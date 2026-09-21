@@ -1,0 +1,105 @@
+/* Each narrative sends exposure, temperature and travel from the same reversible interaction progress. */
+:root { --cosmic-light: 20%; --cosmic-warmth: 0%; --cosmic-travel: 0%; }
+:root[data-style="moon"] {
+  --cosmic-base: #080e17; --cosmic-base-lit: #26333c; --cosmic-base-warm: #38372e;
+  --cosmic-paper: #142029f5; --cosmic-paper-lit: #394953f5; --cosmic-paper-warm: #49493cf5;
+  --cosmic-ink: #e7edf0; --cosmic-ink-lit: #f6f5ed;
+  --cosmic-muted: #a5b5bd; --cosmic-muted-lit: #c6d2d2;
+  --cosmic-accent: #98bbc9; --cosmic-accent-lit: #dce8e6; --cosmic-accent-warm: #ead5ac;
+  --accent-rgb: 176 202 210; --skin-secondary-rgb: 113 170 194; --skin-tertiary-rgb: 232 231 214;
+}
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .page-heading h1 { text-shadow: 0 2px 24px var(--canvas), 0 1px 4px var(--canvas); }
+:root[data-style="galaxy"] {
+  --cosmic-base: #101b2b; --cosmic-base-lit: #2b4159; --cosmic-base-warm: #3b424d;
+  --cosmic-paper: #1c2d40f5; --cosmic-paper-lit: #405970f5; --cosmic-paper-warm: #4b5868f5;
+  --cosmic-ink: #e7eff8; --cosmic-ink-lit: #f5f6fa;
+  --cosmic-muted: #adbed2; --cosmic-muted-lit: #cedce9;
+  --cosmic-accent: #afcde8; --cosmic-accent-lit: #dceafb; --cosmic-accent-warm: #e1dcce;
+  --accent-rgb: 179 209 237; --skin-secondary-rgb: 155 198 225; --skin-tertiary-rgb: 231 235 242;
+}
+:root[data-style="nebula"] {
+  --cosmic-base: #0b1718; --cosmic-base-lit: #283e3b; --cosmic-base-warm: #394031;
+  --cosmic-paper: #1d2e2ff5; --cosmic-paper-lit: #3e5953f5; --cosmic-paper-warm: #535d46f5;
+  --cosmic-ink: #e5efeb; --cosmic-ink-lit: #f1f4e9;
+  --cosmic-muted: #a5bcb5; --cosmic-muted-lit: #d1d9c6;
+  --cosmic-accent: #a7c7ba; --cosmic-accent-lit: #d3e9dc; --cosmic-accent-warm: #eee0ba;
+  --accent-rgb: 176 211 195; --skin-secondary-rgb: 113 175 167; --skin-tertiary-rgb: 231 231 204;
+}
+:root[data-theme="light"][data-style="moon"] {
+  --cosmic-base: #bbc7cf; --cosmic-base-lit: #e2e7e5; --cosmic-base-warm: #efe3c8;
+  --cosmic-paper: #dce5eaf5; --cosmic-paper-lit: #f6f6eff5; --cosmic-paper-warm: #fcf5e2f5;
+  --cosmic-ink: #1d303b; --cosmic-ink-lit: #28362f;
+  --cosmic-muted: #435965; --cosmic-muted-lit: #566352;
+  --cosmic-accent: #365f72; --cosmic-accent-lit: #3e6269; --cosmic-accent-warm: #7c653a;
+  --accent-rgb: 54 95 114;
+}
+:root[data-theme="light"][data-style="galaxy"] {
+  --cosmic-base: #d0dce9; --cosmic-base-lit: #edf3fa; --cosmic-base-warm: #f0eeea;
+  --cosmic-paper: #e4edf5f5; --cosmic-paper-lit: #f5f8fcf5; --cosmic-paper-warm: #f7f5f1f5;
+  --cosmic-ink: #263c54; --cosmic-ink-lit: #314259;
+  --cosmic-muted: #4d6680; --cosmic-muted-lit: #60758b;
+  --cosmic-accent: #426c97; --cosmic-accent-lit: #487394; --cosmic-accent-warm: #777e8c;
+  --accent-rgb: 66 108 151;
+}
+:root[data-theme="light"][data-style="nebula"] {
+  --cosmic-base: #c5d3cd; --cosmic-base-lit: #e6eee2; --cosmic-base-warm: #eee9cf;
+  --cosmic-paper: #dfe9e3f5; --cosmic-paper-lit: #f6faeff5; --cosmic-paper-warm: #fff9e5f5;
+  --cosmic-ink: #253e38; --cosmic-ink-lit: #334633;
+  --cosmic-muted: #4b675d; --cosmic-muted-lit: #626d4d;
+  --cosmic-accent: #3b7367; --cosmic-accent-lit: #4d7a61; --cosmic-accent-warm: #8b773e;
+  --accent-rgb: 59 115 103;
+}
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) {
+  --cosmic-sky: color-mix(in srgb, var(--cosmic-base-lit), var(--cosmic-base-warm) var(--cosmic-warmth));
+  --cosmic-material: color-mix(in srgb, var(--cosmic-paper-lit), var(--cosmic-paper-warm) var(--cosmic-warmth));
+  --cosmic-highlight: color-mix(in srgb, var(--cosmic-accent-lit), var(--cosmic-accent-warm) var(--cosmic-warmth));
+  --canvas: color-mix(in srgb, var(--cosmic-base), var(--cosmic-sky) var(--cosmic-light));
+  --paper: color-mix(in srgb, var(--cosmic-paper), var(--cosmic-material) var(--cosmic-light));
+  --ink: color-mix(in srgb, var(--cosmic-ink), var(--cosmic-ink-lit) var(--cosmic-light));
+  --muted: color-mix(in srgb, var(--cosmic-muted), var(--cosmic-muted-lit) var(--cosmic-light));
+  --faint: var(--muted); --text-body: color-mix(in srgb, var(--ink) 80%, var(--muted));
+  --accent: color-mix(in srgb, var(--cosmic-accent), var(--cosmic-highlight) var(--cosmic-light));
+  --accent-hover: color-mix(in srgb, var(--accent), var(--ink) 40%);
+  --accent-secondary: color-mix(in srgb, var(--accent) 65%, var(--canvas));
+  --accent-text-soft: var(--accent); --olive-dark: var(--accent);
+  --olive-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 45%, var(--canvas));
+  --accent-border-strong: color-mix(in srgb, var(--accent) 70%, var(--canvas));
+  --input-border-hover: var(--accent-border-strong);
+  --surface-soft: color-mix(in srgb, var(--paper) 92%, var(--accent));
+  --surface-hover: color-mix(in srgb, var(--paper) 84%, var(--accent));
+  --surface-control: color-mix(in srgb, var(--paper) 85%, var(--canvas));
+  --surface-muted: color-mix(in srgb, var(--paper) 90%, var(--accent));
+  --surface-subtle: color-mix(in srgb, var(--paper) 70%, var(--canvas));
+  --surface-strong: color-mix(in srgb, var(--paper) 75%, var(--accent));
+  --surface-drawer: color-mix(in srgb, var(--canvas) 93%, var(--accent));
+  --surface-glass: var(--paper); --on-solid: var(--canvas);
+  --line: color-mix(in srgb, var(--accent) 19%, transparent);
+  --line-strong: color-mix(in srgb, var(--accent) 36%, transparent);
+  --track: color-mix(in srgb, var(--accent) 15%, var(--canvas));
+  --skeleton: var(--surface-muted); --skeleton-active: var(--surface-strong);
+  --chart-guide: var(--line); --neutral-series: var(--muted);
+  --scene-left: color-mix(in srgb, var(--canvas) 76%, transparent);
+  --scene-floor: color-mix(in srgb, var(--canvas) 42%, transparent);
+  --ambient-light: color-mix(in srgb, var(--accent) 8%, transparent);
+  --ambient-surface: color-mix(in srgb, var(--accent) 17%, var(--paper));
+  --shadow-soft: 0 8px 28px #0001, inset 0 1px 0 var(--line);
+  --shadow-overlay: 0 24px 100px #0005, inset 0 1px 0 var(--line-strong);
+}
+:root[data-theme="light"]:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) { --on-solid: #fff; --shadow-overlay: 0 24px 100px #242b3e30, inset 0 1px 0 var(--line-strong); }
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .scene-depth { background: radial-gradient(ellipse at 77% 31%, var(--ambient-light), transparent 72%); }
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .scene-veil { background: linear-gradient(90deg, var(--scene-left), color-mix(in srgb,var(--canvas) 18%,transparent) 38%, transparent 100%), linear-gradient(0deg,var(--scene-floor),transparent 72%); }
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .allocation-panel { background: linear-gradient(135deg, var(--ambient-surface), var(--paper) 70%); box-shadow: inset 0 1px 0 var(--line-strong), 0 30px 80px #0002; }
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .sidebar { box-shadow: 0 18px 60px #0002, inset 0 1px 0 var(--line-strong); }
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .brand-mark { color: var(--accent); }
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .workspace-tools { padding: 6px 9px 6px 15px; border: 1px solid var(--line); border-radius: 40px; background: var(--paper); }
+:root[data-theme="light"]:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .metric-card--accent { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; }
+.skin-preview--moon { background: #0b1526; }
+.skin-preview--galaxy { background: #121c20; }
+.skin-preview--nebula { background: #152b29; }
+.skin-preview > canvas { width: 100%; height: 100%; object-fit: cover; }
+.appearance-skin-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1500px) { .scene-switcher button .scene-label { display: none; } .scene-switcher button { padding: 0 11px; } }
+@media (max-width: 680px) { .appearance-skin-options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+:root:is([data-style="moon"], [data-style="galaxy"], [data-style="nebula"]) .scene-depth { background: radial-gradient(ellipse at calc(42% + var(--cosmic-travel) * .2) 42%, var(--ambient-light), transparent 72%); }

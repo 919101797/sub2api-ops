@@ -1,0 +1,49 @@
+{
+  "version": 11,
+  "fixed_group_ids": [],
+  "reset_sync": {
+    "interval_seconds": 180,
+    "request_timeout_seconds": 25,
+    "reset_at_tolerance_seconds": 300,
+    "usage_drop_tolerance_percent": 0.5
+  },
+  "capacity_sync": {
+    "interval_seconds": 600,
+    "minimum_used_percent": 5,
+    "minimum_change_usd": 1
+  },
+  "prompt_audit": {
+    "max_request_body_mib": 10,
+    "normal_retention_days": 7,
+    "risk_retention_days": 30
+  },
+  "user_concurrency_schedule": {
+    "enabled": false,
+    "timezone": "Asia/Shanghai",
+    "peak_windows": [
+      {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    ],
+    "peak_concurrency": 3,
+    "idle_concurrency": 5,
+    "peak_rpm": 30,
+    "idle_rpm": 60,
+    "exempt_user_ids": []
+  },
+  "accounts": [
+    {
+      "key": "example-account",
+      "email": "account@example.com",
+      "label": "示例账号",
+      "share_count": 1,
+      "reserve_mode": "usd",
+      "reserve_value": 0,
+      "target_group_ids": [
+        1
+      ],
+      "enabled": false
+    }
+  ]
+}

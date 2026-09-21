@@ -1,0 +1,74 @@
+/* The renderer's physical engagement also lights the workspace materials. */
+:root { --scene-engagement: 0%; }
+:root[data-style="quantum"] {
+  --scene-base: #090913; --scene-lit: #202a40;
+  --scene-paper: #171528e8; --scene-paper-lit: #2e3c53ec; --scene-accent-lit: #d0f4ff;
+}
+:root[data-style="ferrofluid"] {
+  --scene-base: #090e11; --scene-lit: #253d43;
+  --scene-paper: #141f24e8; --scene-paper-lit: #37545bec; --scene-accent-lit: #e3fcff;
+}
+:root[data-style="lighttunnel"] {
+  --scene-base: #080c19; --scene-lit: #1e3451;
+  --scene-paper: #121b31e8; --scene-paper-lit: #2e4b6bec; --scene-accent-lit: #e1f6ff;
+}
+:root[data-style="aurora"] {
+  --scene-base: #07130f; --scene-lit: #1c3a33;
+  --scene-paper: #141f1be8; --scene-paper-lit: #2b5147ec; --scene-accent-lit: #ddfff0;
+}
+:root[data-style="tidal"] {
+  --scene-base: #08121e; --scene-lit: #1b3b4c;
+  --scene-paper: #14232fe8; --scene-paper-lit: #2b5264ec; --scene-accent-lit: #d5f4ff;
+}
+:root[data-theme="light"][data-style="quantum"] {
+  --scene-base: #e7e3f4; --scene-lit: #d4eaf2;
+  --scene-paper: #faf8ffed; --scene-paper-lit: #effbfff2; --scene-accent-lit: #285d78;
+}
+:root[data-theme="light"][data-style="ferrofluid"] {
+  --scene-base: #dae5e7; --scene-lit: #b9d4da;
+  --scene-paper: #f6fdffed; --scene-paper-lit: #deeff2f2; --scene-accent-lit: #244d62;
+}
+:root[data-theme="light"][data-style="lighttunnel"] {
+  --scene-base: #e0e6f1; --scene-lit: #bfd9ed;
+  --scene-paper: #f6faffed; --scene-paper-lit: #e5f5fff2; --scene-accent-lit: #275a79;
+}
+:root[data-theme="light"][data-style="aurora"] {
+  --scene-base: #dfece7; --scene-lit: #bddfd2;
+  --scene-paper: #f8fcfaed; --scene-paper-lit: #e4f7eff2; --scene-accent-lit: #215947;
+}
+:root[data-theme="light"][data-style="tidal"] {
+  --scene-base: #e0e9f0; --scene-lit: #bedce7;
+  --scene-paper: #f6fbffed; --scene-paper-lit: #e1f3faf2; --scene-accent-lit: #22566f;
+}
+:root[data-style]:is([data-style="quantum"], [data-style="ferrofluid"], [data-style="lighttunnel"], [data-style="aurora"], [data-style="tidal"]) {
+  --canvas: color-mix(in srgb, var(--scene-base), var(--scene-lit) var(--scene-engagement));
+  --paper: color-mix(in srgb, var(--scene-paper), var(--scene-paper-lit) var(--scene-engagement));
+  --accent: color-mix(in srgb, rgb(var(--accent-rgb)), var(--scene-accent-lit) var(--scene-engagement));
+  --accent-hover: color-mix(in srgb, var(--accent), var(--ink) 25%);
+  --accent-secondary: color-mix(in srgb, var(--accent) 70%, var(--canvas));
+  --accent-text-soft: var(--accent); --olive-dark: var(--accent);
+  --olive-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 36%, var(--canvas));
+  --accent-border-strong: color-mix(in srgb, var(--accent) 63%, var(--canvas));
+  --surface-soft: color-mix(in srgb, var(--paper) 94%, var(--accent));
+  --surface-hover: color-mix(in srgb, var(--paper) 84%, var(--accent));
+  --surface-control: color-mix(in srgb, var(--paper) 84%, var(--canvas));
+  --surface-muted: color-mix(in srgb, var(--paper) 90%, var(--accent));
+  --surface-subtle: color-mix(in srgb, var(--paper) 70%, var(--canvas));
+  --surface-strong: color-mix(in srgb, var(--paper) 76%, var(--accent));
+  --surface-drawer: color-mix(in srgb, var(--canvas) 93%, var(--accent));
+  --surface-glass: var(--paper); --input-border-hover: var(--accent-border-strong);
+  --line: color-mix(in srgb, var(--accent) 19%, transparent);
+  --line-strong: color-mix(in srgb, var(--accent) 34%, transparent);
+  --track: color-mix(in srgb, var(--accent) 14%, var(--canvas));
+  --chart-guide: var(--line); --skeleton: var(--surface-muted); --skeleton-active: var(--surface-strong);
+  --scene-left: color-mix(in srgb, var(--canvas) 88%, transparent);
+  --scene-floor: color-mix(in srgb, var(--canvas) 48%, transparent);
+  --ambient-light: color-mix(in srgb, var(--accent) 12%, transparent);
+  --shadow-soft: 0 8px 28px #0001, inset 0 1px 0 var(--line);
+}
+.visual-hero > canvas, .visual-hero > .react-bits-scene { animation: scene-arrive 320ms ease-out both; }
+@keyframes scene-arrive { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .visual-hero > canvas, .visual-hero > .react-bits-scene { animation: none; }
+}
