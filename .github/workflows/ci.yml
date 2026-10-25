@@ -26,6 +26,9 @@ jobs:
       - run: python3 -m pip install PyYAML==6.0.2
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
-      - run: npm test
+      # 渲染与路径连续性采样在共享 runner 上可能超过本地 5 秒预算。
+      - run: npx vitest run --testTimeout=20000
+      - run: npm run test:compression
+      - run: npm run test:runtime
       - run: python3 -m unittest discover -s deploy/resource-monitor
       - run: npm run build
