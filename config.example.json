@@ -43,7 +43,8 @@
       "target_group_ids": [
         1
       ],
-      "enabled": false
+      "enabled": false,
+      "redistribution_enabled": false
     }
   ]
 }

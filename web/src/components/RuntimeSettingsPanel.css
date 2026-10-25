@@ -1,0 +1,12 @@
+.runtime-settings { padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); }
+.runtime-settings__heading, .runtime-settings__heading > div { display: flex; align-items: center; gap: 10px; }
+.runtime-settings__heading { justify-content: space-between; flex-wrap: wrap; }
+.runtime-settings h2 { margin: 0; font-size: 17px; }
+.runtime-settings > p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.runtime-settings__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 22px 0; }
+.runtime-settings .field { min-width: 0; }
+.runtime-settings .field input { width: 100%; }
+.runtime-settings small { display: block; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.runtime-settings__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.runtime-settings__result { border-left: 2px solid var(--accent); padding-left: 12px; }
+@media (max-width: 680px) { .runtime-settings { padding: 18px; } .runtime-settings__fields { grid-template-columns: minmax(0, 1fr); gap: 18px; } }

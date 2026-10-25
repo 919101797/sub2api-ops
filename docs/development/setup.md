@@ -92,3 +92,5 @@ docs/specs/             行为规格与测试入口
 后端日志输出到当前终端，浏览器错误查看开发者工具。调试不能记录 API Key、密码、Cookie、完整提示词或媒体；可使用请求编号关联问题。故障定位见[排障文档](../operations/troubleshooting.md)。
 
 GitHub Actions 执行类型检查、全量测试和构建。CI 通过证明代码检查与模拟测试通过，不表示已验证你的 Sub2API、数据库、Nginx 或 OAuth 配置。
+
+宿主机控制器回归测试需要 Python 3 与 PyYAML：`python3 -m pip install PyYAML==6.0.2`。全量验证还应运行 `python3 -m unittest discover -s deploy/resource-monitor`。

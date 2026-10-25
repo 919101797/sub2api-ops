@@ -80,3 +80,12 @@
 .login-diagram__nodes span { position: relative; width: 130px; height: 27px; border: 1px solid #506646; border-radius: 6px; background: #2a3a2b; }
 .login-diagram__nodes span::before { content: ''; position: absolute; right: 100%; top: 50%; width: 23px; height: 1px; background: #65815b; }
 .login-diagram__nodes span::after { content: ''; position: absolute; left: 12px; top: 11px; width: 70%; height: 3px; background: #7c9467; border-radius: 2px; }
+
+.account-redistribution { margin: 20px 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-muted); }
+.account-redistribution header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.account-redistribution h3 { margin: 0; font-size: 14px; }
+.account-redistribution p { font-size: 13px; line-height: 1.6; margin: 14px 0; }
+.account-redistribution dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.account-redistribution dt, .account-redistribution > small { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.account-redistribution dd { margin: 5px 0 0; font-size: 15px; }
+@media (max-width: 760px) { .account-redistribution dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

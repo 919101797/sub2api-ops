@@ -7,7 +7,7 @@ const relayEnvSchema = z.object({
   WS_AUDIT_CAPTURE_URL: z.url(),
   WS_AUDIT_OUTBOX_PATH: z.string().min(1).default('/data/outbox'),
   WS_AUDIT_OUTBOX_MAX_BYTES: z.coerce.number().int().min(16 * 1024 * 1024).max(16 * 1024 * 1024 * 1024).default(512 * 1024 * 1024),
-  WS_RELAY_MAX_MESSAGE_BYTES: z.coerce.number().int().min(1_024).max(64 * 1024 * 1024).default(16 * 1024 * 1024),
+  REQUEST_LIMITS_PATH: z.string().min(1).default('/request-limits/policy.json'),
   PROMPT_CAPTURE_SECRET: z.string().min(32),
 })
 

@@ -29,3 +29,6 @@ backups/
 .gitlab/
 
 internal/
+
+__pycache__/
+*.pyc

@@ -102,6 +102,10 @@ export interface AdminGroup {
 }
 
 export interface UserSubscription {
+  user_id?: number
+  weekly_usage_usd?: number
+  weekly_window_start?: string | null
+  expires_at?: string
   id: number
   group_id: number
   status: 'active' | 'expired' | 'revoked' | 'suspended'

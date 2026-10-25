@@ -1,0 +1,28 @@
+[Unit]
+Description=Sub2API independent host resource sampler
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+Group=1000
+ExecStart=/usr/bin/python3 /usr/local/lib/sub2api-resource-monitor/collector.py
+Restart=on-failure
+RestartSec=5
+StateDirectory=sub2api-resource-monitor
+StateDirectoryMode=0750
+UMask=0027
+MemoryAccounting=true
+MemoryMax=64M
+CPUQuota=5%
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

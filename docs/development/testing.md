@@ -12,13 +12,25 @@
 - 单元测试只在直接证明业务场景时带编号。
 - 不维护不可执行的 `.feature`；当前使用 Vitest、Testing Library 和 `jsdom`。
 
+## Python 测试环境
+
+运行参数控制器使用 PyYAML；`npm test` 同时运行宿主机控制器测试。请使用已安装 PyYAML 的 Python 3 环境，或在本地创建独立环境：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install PyYAML
+```
+
+生产安装使用服务器已有的系统 Python 与 PyYAML，不在生产机创建构建环境。
+
 ## 执行层级
 
 | 范围 | 命令 |
 | --- | --- |
-| 文件 | `npx vitest run server/automation/engine.test.ts` |
+| 文件 | `npm test -- server/automation/engine.test.ts` |
 | 行 | `npx vitest run server/automation/engine.test.ts:49` |
-| 功能 | `npx vitest run server/prompt-audit` |
+| 功能 | `npm test -- server/prompt-audit` |
 | 改动相关 | `npx vitest run --changed` |
 | 指定源码相关 | `npx vitest related --run server/automation/engine.ts` |
 | 全量 | `npm run typecheck && npm test && npm run build` |
@@ -26,10 +38,6 @@
 `related` 只识别静态依赖；动态加载、Nginx、数据库和部署配置不能依赖它。
 
 UI 的 jsdom 测试最多并行 4 个 worker，避免布局查询在资源竞争下超过业务断言的等待时间。状态测试使用 Motion 的 `skipAnimations` 直接检查落稳状态；弹簧轨迹、连续转向与视觉效果另在浏览器验收。
-
-场景生命周期测试保留真实交互、帧调度、暂停与资源释放逻辑，用绘制函数替身替代像素计算并验证正确绘制入口被调用；像素效果仍需浏览器验收。
-
-纯数值轨迹测试使用 Node 环境；密集采样先计算整条轨迹的有限性、最大步长和反向结果，再做整组断言，保留全部采样点和交接边界，避免测试断言本身耗尽 CI 的时间预算。
 
 ## 全量触发条件
 

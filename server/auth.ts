@@ -96,8 +96,12 @@ export class AuthService {
     try {
       await this.validate(request)
     } catch (error) {
+      if (!(error instanceof Sub2ApiError) || (error.status !== 401 && error.status !== 403)) {
+        await reply.code(503).send({ error: 'Sub2API 暂时不可用，恢复后会自动重试' })
+        return
+      }
       request.session.delete()
-      const forbidden = error instanceof Sub2ApiError && error.status === 403
+      const forbidden = error.status === 403
       const status = forbidden ? 403 : 401
       await reply.code(status).send({ error: forbidden ? error.message : '登录已失效，请重新登录' })
     }

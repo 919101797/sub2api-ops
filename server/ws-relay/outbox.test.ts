@@ -49,3 +49,27 @@ describe('WS audit outbox', () => {
     expect(attempts).toBe(2)
   })
 })
+
+it('场景-012-07：重启只加载元数据，投递保留二进制原始字节与长度', async () => {
+  const { createHash } = await import('node:crypto')
+  const directory = await mkdtemp(join(tmpdir(), 'ws-stream-outbox-'))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const outbox = new WsAuditOutbox(directory); await outbox.initialize()
+  const payload = Buffer.alloc(2 * 1024 * 1024, 0xff)
+  await outbox.persist({ id: 'binary.ws.1',connectionId:'binary',sequence:1,capturedAt:new Date().toISOString(),endpoint:'/v1/responses#websocket',payload })
+  const restarted = new WsAuditOutbox(directory); await restarted.initialize()
+  const entries = await restarted.entries()
+  expect(entries[0]).not.toHaveProperty('payload')
+  expect(entries[0]!.payloadBytes).toBe(payload.length)
+  let captured = ''
+  const server = createServer((req,res) => {
+    const hash = createHash('sha256'); req.on('data',(chunk: Buffer) => hash.update(chunk)); req.on('end',() => { captured=hash.digest('hex');res.writeHead(201).end() })
+  })
+  await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
+  cleanup.push(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const address=server.address() as {port:number}
+  const delivery=new WsAuditDelivery(restarted,`http://127.0.0.1:${address.port}/capture`,'s'.repeat(32),{error:vi.fn(),info:vi.fn(),warn:vi.fn()})
+  cleanup.push(() => delivery.close()); delivery.start()
+  await vi.waitFor(async () => expect(await restarted.pendingCount()).toBe(0))
+  expect(captured).toBe(createHash('sha256').update(payload).digest('hex'))
+})

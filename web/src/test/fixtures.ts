@@ -81,6 +81,7 @@ export function dashboardFixture(): DashboardResponse {
         email: account.email,
         label: account.label,
         shareCount: 3,
+        redistributionEnabled: false,
         reserveMode: 'percent',
         reserveValue: 10,
         targetGroupIds: [12 + index],

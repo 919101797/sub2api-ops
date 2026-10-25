@@ -19,6 +19,7 @@ const InputHealthPage = lazy(() =>
 )
 const ActivityPage = lazy(() => import('@/pages/ActivityPage').then((page) => ({ default: page.ActivityPage })))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((page) => ({ default: page.SettingsPage })))
+const ResourcesPage = lazy(() => import('@/pages/ResourcesPage').then((page) => ({ default: page.ResourcesPage })))
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((page) => ({ default: page.LoginPage })))
 
 function Console({
@@ -64,6 +65,7 @@ function Console({
         </div>
       )}
       <Routes>
+        <Route path="/resources" element={<Suspense fallback={<LoadingScreen />}><ResourcesPage /></Suspense>} />
         <Route
           path="/"
           element={

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
@@ -54,6 +54,8 @@ describe('AppShell mobile swipe navigation', () => {
     )
 
     const workspace = document.querySelector<HTMLElement>('.workspace')!
+    const mobile = screen.getByRole('navigation', { name: '移动端导航' })
+    expect(within(mobile).getByRole('link', { name: '资源' })).toHaveAttribute('href', '/resources')
     fireEvent.touchStart(workspace, { touches: [touch(1, 300, 280)] })
     fireEvent.touchMove(workspace, { touches: [touch(1, 210, 286)] })
     expect(document.querySelector('.workspace__inner')).toHaveClass('workspace__inner--dragging')

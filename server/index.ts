@@ -15,30 +15,37 @@ import { PromptAuditRepository } from './prompt-audit/repository.js'
 import { registerPromptCaptureRoute } from './prompt-audit/routes.js'
 import { PromptAuditService } from './prompt-audit/service.js'
 import { registerRoutes } from './routes.js'
+import { RequestLimitsStore } from './request-limits/policy.js'
+import { join } from 'node:path'
 import { StateStore } from './store.js'
 import { Sub2ApiClient } from './sub2api-client.js'
+import { UserLimitsRepository } from './user-limits.js'
 
 const startedAt = new Date().toISOString()
 const env = loadEnv()
 const config = await loadConfig(env.CONFIG_PATH)
 const store = new StateStore(env.STATE_PATH)
 await store.initialize()
+const requestLimits = new RequestLimitsStore(join(dirname(env.STATE_PATH), 'request-limits/policy.json'))
+await requestLimits.initialize()
 
 const client = new Sub2ApiClient(
   env.SUB2API_BASE_URL,
   env.SUB2API_ADMIN_API_KEY,
   config.resetSync.requestTimeoutSeconds * 1_000,
 )
-const engine = new AutomationEngine(config, client, store)
-await engine.initialize()
-const auth = new AuthService(client, store)
-const analytics = new AnalyticsRepository({
+const database = {
   host: env.SUB2API_DB_HOST,
   port: env.SUB2API_DB_PORT,
   database: env.SUB2API_DB_NAME,
   user: env.SUB2API_DB_USER,
   password: env.SUB2API_DB_PASSWORD,
-})
+}
+const userLimits = new UserLimitsRepository(database)
+const engine = new AutomationEngine(config, client, store, () => userLimits.users())
+await engine.initialize()
+const auth = new AuthService(client, store)
+const analytics = new AnalyticsRepository(database)
 const promptAuditRepository = new PromptAuditRepository({
   host: env.SUB2API_DB_HOST,
   port: env.SUB2API_DB_PORT,
@@ -99,7 +106,7 @@ app.addHook('onRequest', async (request, reply) => {
   }
 })
 
-await registerRoutes(app, { env, client, store, engine, auth, analytics, promptAuditRepository, startedAt })
+await registerRoutes(app, { env, client, store, engine, auth, analytics, promptAuditRepository, startedAt, requestLimits })
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url))
 const webRoot = resolve(currentDirectory, '../web')
@@ -119,7 +126,7 @@ app.get(`${env.COOKIE_PATH.replace(/\/$/, '')}/*`, async (request, reply) => {
 
 app.addHook('onClose', async () => {
   engine.stop()
-  await Promise.all([analytics.close(), promptAudit.close()])
+  await Promise.all([analytics.close(), userLimits.close(), promptAudit.close()])
 })
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

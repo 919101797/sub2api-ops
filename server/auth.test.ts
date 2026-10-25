@@ -75,3 +75,27 @@ describe('Sub2ApiClient OAuth start path', () => {
     expect(client.oauthStartPath('google')).toBe('/api/v1/auth/oauth/google/start?redirect=%2Fdashboard')
   })
 })
+
+describe('场景-001-05：管理员会话在 Sub2API 短暂重启期间保留', () => {
+  it.each([new Sub2ApiError('upstream unavailable', 503), new Error('connection refused')])('临时故障返回 503，恢复后无需重新登录', async (failure) => {
+    const { service, currentUser } = serviceFor({ id: 7, email: 'admin@example.com', username: 'admin', role: 'admin', status: 'active', concurrency: 5, rpm_limit: 0 })
+    currentUser.mockRejectedValueOnce(failure)
+    const session = { get: vi.fn(() => ({ accessToken: 'token', user: { role: 'admin' } })), set: vi.fn(), delete: vi.fn() }
+    const request = { session } as unknown as FastifyRequest
+    const reply = { code: vi.fn().mockReturnThis(), send: vi.fn() }
+    await service.requireAdmin(request, reply as never)
+    expect(reply.code).toHaveBeenCalledWith(503)
+    expect(session.delete).not.toHaveBeenCalled()
+    await service.requireAdmin(request, reply as never)
+    expect(session.set).toHaveBeenCalled()
+  })
+  it('真正失效的凭据仍清除会话', async () => {
+    const { service, currentUser } = serviceFor({} as UpstreamUser)
+    currentUser.mockRejectedValueOnce(new Sub2ApiError('expired', 401))
+    const session = { get: () => ({ accessToken: 'token' }), delete: vi.fn() }
+    const reply = { code: vi.fn().mockReturnThis(), send: vi.fn() }
+    await service.requireAdmin({ session } as never, reply as never)
+    expect(reply.code).toHaveBeenCalledWith(401)
+    expect(session.delete).toHaveBeenCalled()
+  })
+})

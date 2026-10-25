@@ -1,23 +1,23 @@
 import { createServer } from 'node:http'
 
 const accounts = {
-  'primary@example.com': { id: 5, name: 'primary@example.com', status: 'active', proxy_id: 12, proxy: { id: 12, name: '示例代理 A', status: 'active', protocol: 'socks5h', host: '192.0.2.10', port: 1080, expires_at: null } },
-  'secondary@example.com': { id: 8, name: 'secondary@example.com', status: 'active', proxy_id: 11, proxy: { id: 11, name: '示例代理 B', status: 'active', protocol: 'socks5h', host: '198.51.100.20', port: 1080, expires_at: null } },
+  'account-a@example.com': { id: 5, name: 'account-a@example.com', status: 'active', proxy_id: 12, proxy: { id: 12, name: '美宾夕法尼亚-socksh', status: 'active', protocol: 'socks5h', host: '192.0.2.28', port: 5813, expires_at: null } },
+  'account-b@example.com': { id: 8, name: 'account-b@example.com', status: 'active', proxy_id: 11, proxy: { id: 11, name: '加拿大家宽socks5h', status: 'active', protocol: 'socks5h', host: '198.51.100.46', port: 6773, expires_at: null } },
 }
 const quotas = {
-  5: { used_percent: 25, reset_at: 1_786_953_600 },
-  8: { used_percent: 50, reset_at: 1_786_960_800 },
+  5: { used_percent: 66, reset_at: 1_786_953_600 },
+  8: { used_percent: 42, reset_at: 1_786_960_800 },
 }
-const costs = { 5: 100, 8: 200 }
+const costs = { 5: 1157.81, 8: 966.12 }
 const groupNames = {
-  5: '示例分组 A-审核',
+  5: '拼车小分队分组',
   6: 'Standard 分组',
-  10: '示例测试分组',
+  10: 'lj-test',
   11: 'GPT-5.3-Codex-Spark',
-  13: '示例分组 A-普通',
-  14: '示例分组 B-审核',
-  15: '示例分组 B-普通',
-  16: '示例标准分组 B',
+  13: '拼车小分队-无审核',
+  14: '加拿大家宽-拼车小分队-ai审核',
+  15: '加拿大家宽-拼车小分队-无审核',
+  16: 'Standard 加拿大宽',
 }
 
 function send(response, data, status = 200) {

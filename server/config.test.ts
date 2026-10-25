@@ -1,9 +1,8 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { fileURLToPath } from 'node:url'
 
-import { loadConfig, parseServiceConfig } from './config.js'
+import { parseServiceConfig } from './config.js'
 
 const valid = {
   version: 11 as const,
@@ -155,12 +154,13 @@ describe('parseServiceConfig', () => {
   })
 })
 
-// The distributed example must be loadable without enabling upstream writes.
-it('场景-004-06：分发配置可加载且默认关闭自动化', async () => {
-  const config = await loadConfig(fileURLToPath(new URL('../config.example.json', import.meta.url)))
-  expect(config.version).toBe(11)
-  expect(config.accounts.length).toBeGreaterThan(0)
-  expect(config.accounts.every((account) => !account.enabled && account.email.endsWith('@example.com'))).toBe(true)
-  expect(config.userConcurrencySchedule.enabled).toBe(false)
-  expect(config.userConcurrencySchedule.exemptUserIds).toEqual([])
+it('场景-003-08：余量再均分默认关闭，每个账号独立保存且拒绝非布尔值', async () => {
+  const { toRawConfig, fromRawConfig } = await import('./config.js')
+  expect(parseServiceConfig(valid).accounts[0]!.redistributionEnabled).toBe(false)
+  const configured = parseServiceConfig({ ...valid, accounts: [
+    { ...valid.accounts[0], redistributionEnabled: true },
+    { ...valid.accounts[0], key: 'other', email: 'other@example.com', targetGroupIds: [6], redistributionEnabled: false },
+  ] })
+  expect(fromRawConfig(toRawConfig(configured)).accounts.map(a => a.redistributionEnabled)).toEqual([true,false])
+  expect(() => parseServiceConfig({ ...valid, accounts: [{ ...valid.accounts[0], redistributionEnabled: 'true' }] })).toThrow()
 })

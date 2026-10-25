@@ -18,6 +18,7 @@ import {
   UsersRound,
   Search,
   Command,
+  Server,
 } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
@@ -34,6 +35,7 @@ const navigation = [
   { to: '/input-health', label: '输入健康', icon: ScanText },
   { to: '/activity', label: '自动化活动', icon: Activity },
   { to: '/settings', label: '系统设置', icon: Settings },
+  { to: '/resources', label: '资源监控', icon: Server },
 ]
 
 const SIDEBAR_STORAGE_KEY = 'ops-navigation-rail'
@@ -397,7 +399,7 @@ export function AppShell({
         ref={mobileNavigation}
         className="mobile-nav"
         aria-label="移动端导航"
-        style={{ '--mobile-active-index': activeNavigationIndex } as CSSProperties}
+        style={{ '--mobile-active-index': activeNavigationIndex, '--mobile-nav-count': navigation.length } as CSSProperties}
       >
         <span className="mobile-nav__indicator" aria-hidden="true" />
         {navigation.map(({ to, label, icon: Icon }) => (
@@ -412,6 +414,7 @@ export function AppShell({
                     '/input-health': '审计',
                     '/activity': '活动',
                     '/settings': '设置',
+                    '/resources': '资源',
                   } as Record<string, string>
                 )[to]
               }

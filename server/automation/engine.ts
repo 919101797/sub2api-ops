@@ -10,9 +10,11 @@ import type {
   ResetCycleSummary,
   ServiceConfig,
 } from '../../shared/contracts.js'
-import type { AdminGroup } from '../sub2api-client.js'
+import { freshRedistribution, QuotaRedistributor } from './redistribution.js'
+import type { AdminGroup, UserSubscription } from '../sub2api-client.js'
 import { Sub2ApiClient } from '../sub2api-client.js'
 import { StateStore } from '../store.js'
+import type { UserLimitState } from '../user-limits.js'
 import {
   appendDistinctCapacitySample,
   CAPACITY_ESTIMATE_WINDOW,
@@ -61,6 +63,7 @@ export class AutomationEngine {
   private config: ServiceConfig
   private timers: Partial<Record<JobKind, NodeJS.Timeout>> = {}
   private running: Record<JobKind, boolean> = { reset: false, capacity: false }
+  private accountQueues = new Map<string, Promise<void>>()
   private userConcurrencyTimer: NodeJS.Timeout | undefined
   private userConcurrencyQueue: Promise<void> = Promise.resolve()
 
@@ -68,6 +71,7 @@ export class AutomationEngine {
     config: ServiceConfig,
     private readonly client: Sub2ApiClient,
     private readonly store: StateStore,
+    private readonly readUserLimits: () => Promise<UserLimitState[]>,
   ) {
     this.config = config
   }
@@ -118,8 +122,7 @@ export class AutomationEngine {
     try {
       for (const account of this.config.accounts.filter((item) => item.enabled)) {
         try {
-          if (kind === 'reset') await this.syncReset(account)
-          else await this.syncCapacity(account)
+          await this.syncAccount(account.key, kind)
           processed += 1
         } catch (error) {
           failures += 1
@@ -144,6 +147,19 @@ export class AutomationEngine {
         : `已检查 ${processed} 个账号`
       await this.store.finishJob(kind, startedAt, failures, message)
     }
+  }
+
+  private async syncAccount(key: string, kind: JobKind): Promise<void> {
+    const previous = this.accountQueues.get(key) ?? Promise.resolve()
+    const task = previous.catch(() => undefined).then(async () => {
+      const account = this.config.accounts.find(item => item.key === key)
+      if (!account?.enabled) return
+      if (kind === 'reset') await this.syncReset(account)
+      else await this.syncCapacity(account)
+    })
+    this.accountQueues.set(key, task)
+    try { await task }
+    finally { if (this.accountQueues.get(key) === task) this.accountQueues.delete(key) }
   }
 
   private schedule(kind: JobKind, delayMs: number): void {
@@ -181,7 +197,7 @@ export class AutomationEngine {
       : concurrencyScheduleTarget(at, schedule)
     const exempt = new Set(schedule.exemptUserIds)
     try {
-      const users = (await this.client.users()).filter((user) => user.status === 'active')
+      const users = (await this.readUserLimits()).filter((user) => user.status === 'active')
       const peakUserIds: number[] = []
       const defaultUserIds: number[] = []
       const exemptUserIds: number[] = []
@@ -317,6 +333,7 @@ export class AutomationEngine {
     await this.finalizeCycle(config.key, previous, config.shareCount)
 
     const subscriptions = await this.client.activeSubscriptions(config.targetGroupIds)
+    const redistribution = this.store.snapshot().accounts[config.key]?.redistribution
     const event: PendingResetEvent = {
       id: randomUUID(),
       detectedAt: nowIso(),
@@ -324,6 +341,8 @@ export class AutomationEngine {
       observation,
       targetSubscriptionIds: subscriptions.map((item) => item.id),
       completedSubscriptionIds: [],
+      ...(redistribution?.baseLimitUsd !== undefined && (redistribution.limits.length || redistribution.pending)
+        ? { restoreRedistributionLimits: { limitUsd: redistribution.baseLimitUsd, groupIds: [...config.targetGroupIds] } } : {}),
     }
     await this.store.updateAccount(config.key, (draft) => {
       draft.reset.pendingEvent = event
@@ -339,6 +358,16 @@ export class AutomationEngine {
   }
 
   private async completeReset(config: AccountConfig, event: PendingResetEvent): Promise<void> {
+    if (event.restoreRedistributionLimits) {
+      for (const id of event.restoreRedistributionLimits.groupIds) {
+        const current = this.config.accounts.find(item => item.key === config.key)
+        if (!current?.targetGroupIds.includes(id)) continue
+        const group = await this.client.group(id)
+        if (group.weekly_limit_usd !== event.restoreRedistributionLimits.limitUsd) {
+          await this.client.updateGroupWeeklyLimit(group, event.restoreRedistributionLimits.limitUsd)
+        }
+      }
+    }
     const completed = new Set(event.completedSubscriptionIds)
     for (const subscriptionId of event.targetSubscriptionIds) {
       if (completed.has(subscriptionId)) continue
@@ -351,6 +380,7 @@ export class AutomationEngine {
       })
     }
     await this.store.updateAccount(config.key, (draft) => {
+      if (draft.redistribution) draft.redistribution = freshRedistribution(event.observation.resetAt)
       draft.reset.observation = event.observation
       draft.reset.lastHandledResetAt = event.observation.resetAt
       draft.reset.lastCompletedEventAt = nowIso()
@@ -535,29 +565,36 @@ export class AutomationEngine {
         }),
       }
       await this.saveCapacity(config, capacity)
+      await this.redistribute(config, observation, standardCostUsd, previousEstimate, subscriptions)
       return
     }
 
     const groups = await Promise.all(config.targetGroupIds.map((groupId) => this.client.group(groupId)))
+    const redistribution = accountState?.redistribution
+    const currentRedistribution = redistribution && isSameResetWindow(redistribution.resetAt, observation.resetAt, toleranceSeconds)
+      ? redistribution : undefined
     const allocations = []
     let failed = false
     let updated = 0
     for (const group of groups) {
       const current = group.weekly_limit_usd
-      const shouldUpdate = current === null
-        || Math.abs(current - estimate.perShareCapacityUsd) >= this.config.capacitySync.minimumChangeUsd
+      const floor = currentRedistribution?.limits.find(item => item.groupId === group.id)?.limitUsd ?? 0
+      const targetLimit = Math.max(estimate.perShareCapacityUsd, floor)
+      const shouldUpdate = !currentRedistribution?.pending && (current === null
+        || Math.abs(current - targetLimit) >= this.config.capacitySync.minimumChangeUsd)
       if (!shouldUpdate) {
-        allocations.push(this.allocation(group, estimate.perShareCapacityUsd, false, 'unchanged'))
+        allocations.push(this.allocation(group, targetLimit, false, 'unchanged'))
         continue
       }
       try {
-        await this.client.updateGroupWeeklyLimit(group, estimate.perShareCapacityUsd)
-        allocations.push(this.allocation(group, estimate.perShareCapacityUsd, true, 'updated'))
+        await this.client.updateGroupWeeklyLimit(group, targetLimit)
+        allocations.push(this.allocation(group, targetLimit, true, 'updated'))
+        group.weekly_limit_usd = targetLimit
         updated += 1
       } catch (error) {
         failed = true
         allocations.push({
-          ...this.allocation(group, estimate.perShareCapacityUsd, false, 'failed'),
+          ...this.allocation(group, targetLimit, false, 'failed'),
           error: errorMessage(error),
         })
       }
@@ -607,6 +644,28 @@ export class AutomationEngine {
         },
       })
     }
+    await this.redistribute(config, observation, standardCostUsd, {
+      estimatedCycleCapacityUsd: estimate.cycleCapacityUsd,
+      reserveUsd: estimate.reserveUsd,
+      allocatableCapacityUsd: estimate.allocatableCapacityUsd,
+      perShareCapacityUsd: estimate.perShareCapacityUsd,
+    }, subscriptions, groups)
+  }
+
+  private async redistribute(config: AccountConfig, observation: QuotaObservation, standardCostUsd: number,
+    estimate: StableCapacityEstimate | undefined, subscriptions: UserSubscription[], groups?: AdminGroup[]): Promise<void> {
+    const account = this.store.snapshot().accounts[config.key]
+    if (!config.redistributionEnabled && !account?.redistribution) return
+    const reset = account?.reset
+    const resetReady = Boolean(reset?.observation && !reset.pendingEvent && isSameResetWindow(
+      reset.observation.resetAt, observation.resetAt, this.config.resetSync.resetAtToleranceSeconds))
+    const service = new QuotaRedistributor(this.client, this.store,
+      key => this.config.accounts.find(item => item.key === key), this.config.resetSync.resetAtToleranceSeconds)
+    await service.run(config, {
+      resetAt: observation.resetAt, usedPercent: observation.usedPercent, standardCostUsd,
+      estimatedCycleCapacityUsd: estimate?.estimatedCycleCapacityUsd, reserveUsd: estimate?.reserveUsd, resetReady,
+      groups: groups ?? await Promise.all(config.targetGroupIds.map(id => this.client.group(id))), subscriptions,
+    })
   }
 
   private allocation(

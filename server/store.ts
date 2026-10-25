@@ -102,6 +102,7 @@ export class StateStore {
           ...(current?.accountId ? { accountId: current.accountId } : {}),
           ...(current?.resolvedAt ? { resolvedAt: current.resolvedAt } : {}),
           ...(current?.capacity ? { capacity: current.capacity } : {}),
+          ...(current?.redistribution ? { redistribution: current.redistribution } : {}),
           ...(current?.lastError ? { lastError: current.lastError } : {}),
           ...(current?.lastErrorAt ? { lastErrorAt: current.lastErrorAt } : {}),
           ...(current?.lastErrorJob ? { lastErrorJob: current.lastErrorJob } : {}),

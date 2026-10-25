@@ -4,6 +4,24 @@
 
 边界：Sub2API 只用官方镜像；生产机不运行 Node.js、npm 或 Docker 构建；不得覆盖 `.env`、`config.json`、`data/`。
 
+## 3.10.4 长请求连接修复
+
+本次同时更新控制台与中继至 `3.10.4`，不改 Sub2API 官方镜像、账号、数据库、请求策略或容器内存。HTTP 上传计数在完整落盘校验后立即释放；模型生成与响应不会继续占上传名额。明确声明 `Accept: text/event-stream` 的 Responses 请求，在等 Sub2API 响应头时每 10 秒发送 SSE 注释，防止边缘空闲超时导致重复提交；JSON 与 compact 保留原 HTTP 状态。保活一旦提交 HTTP 200，晚到的上游 HTTP 错误会用终止 SSE `error` 事件返回，客户端必须按流事件判断是否完成。
+
+中继每个 HTTP 请求记录 `requestId/userId/bodyBytes/authMs/uploadMs/upstreamHeadersMs/responseMs/totalMs/upstreamStatus/status/keepalive/clientDisconnected`。耗时从请求进入网关开始，不含客户端到 Nginx 的上传；不记录 Key、查询参数、正文或上游错误详情。`upstreamHeadersMs` 包含 Sub2API 向代理与模型发起请求的等待，不能直接当成模型服务商耗时。
+
+升级前保存编排、受保护文件与策略哈希，确认发件箱没有旧格式未确认消息。仅替换两项镜像并执行 `docker compose up -d --no-build --no-deps operations-console ws-audit-relay`；中继重建会使现有连接短暂重连。验收真实 Responses HTTP/WS 完成、保活、普通错误状态、日志阶段耗时、策略原值、发件箱与暂存清理及独立采样。回滚只恢复编排和旧镜像，保留 `.env`、`config.json`、策略及业务数据。
+
+## 资源与请求大小设置
+
+先在宿主机按需安装 `deploy/resource-monitor/install.sh`；采样器要求 Docker cgroup v1 的 `/sys/fs/cgroup/memory/docker` 布局，每 15 秒采样并保留 7 天。Compose 将采样目录只读挂载到控制台，未安装时页面显示不可用。
+
+运行参数控制器要求 Python 3 和 PyYAML，固定管理 `/opt/sub2api/compose.yml`；先核对实际编排目录后安装 `deploy/runtime-control/install.sh`。控制台只连接 Unix socket，不挂载 Docker socket；更改固定目录时同步审查控制器、安装脚本和 systemd ReadWritePaths，不通过 API 接受任意路径或命令。
+
+Ops「系统设置 → 请求限制」可维护默认/用户上限（1–100 MiB）、大请求阈值和任意正整数并发，策略首次由控制台创建，后续升级保留 `data/request-limits/policy.json`。Sub2API 的 `SERVER_MAX_REQUEST_BODY_SIZE`、`GATEWAY_MAX_BODY_SIZE`、`GATEWAY_TEXT_MAX_BODY_SIZE`、`GATEWAY_OPENAI_WS_CLIENT_READ_LIMIT_BYTES` 必须设为 `104857600`，并保留正在运行的官方程序版本；它的重建会中断在途请求。中继只读挂载策略目录，先启动控制台初始化策略。审计正文阈值独立，不随用户上限改变。
+
+首次应用 `schema.sql` 还会创建受限的 `resolve_api_key` 函数并授权审计写入角色，用于网关确认真实用户，不向网关开放全部 API Key 表。升级前须由数据库管理员检查并应用当前脚本。`data/` 归 UID/GID 1000，策略目录 0700、策略文件 0600。
+
 ## 准备
 
 1. 复制项目目录，首次使用 `cp -n .env.example .env` 和 `cp -n config.example.json config.json` 创建本地配置，设置权限为 `600`；填写全部占位符。
@@ -13,7 +31,7 @@
 5. 设置持久目录权限：
 
 ```bash
-mkdir -p data/prompt-media data/ws-audit-outbox
+mkdir -p data/prompt-media data/ws-audit-outbox data/request-limits
 chown -R 1000:1000 data
 chown 1000:1000 config.json
 chmod 600 config.json
@@ -75,15 +93,15 @@ npm ci
 npm run typecheck
 npm test
 npm run build
-docker buildx build --platform linux/amd64 -t sub2api-operations-console:3.6.0 --load .
-docker save sub2api-operations-console:3.6.0 | gzip > sub2api-operations-console-3.6.0-amd64.tar.gz
-scp sub2api-operations-console-3.6.0-amd64.tar.gz root@目标服务器:/tmp/
+docker buildx build --platform linux/amd64 -t sub2api-operations-console:3.10.4 --load .
+docker save sub2api-operations-console:3.10.4 | gzip > sub2api-operations-console-3.10.4-amd64.tar.gz
+scp sub2api-operations-console-3.10.4-amd64.tar.gz root@目标服务器:/tmp/
 ```
 
 ## 服务器启动
 
 ```bash
-gzip -dc /tmp/sub2api-operations-console-3.6.0-amd64.tar.gz | docker load
+gzip -dc /tmp/sub2api-operations-console-3.10.4-amd64.tar.gz | docker load
 cd /opt/sub2api-ops
 sudo ./deploy/install-operations-console.sh --no-build
 ```

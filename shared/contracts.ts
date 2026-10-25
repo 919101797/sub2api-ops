@@ -8,6 +8,7 @@ export interface AccountConfig {
   email: string
   label: string
   shareCount: number
+  redistributionEnabled: boolean
   reserveMode: CapacityReserveMode
   reserveValue: number
   targetGroupIds: number[]
@@ -63,6 +64,7 @@ export interface PendingResetEvent {
   observation: QuotaObservation
   targetSubscriptionIds: number[]
   completedSubscriptionIds: number[]
+  restoreRedistributionLimits?: { limitUsd: number; groupIds: number[] }
 }
 
 export interface ResetCycleSummary {
@@ -125,6 +127,27 @@ export interface CapacityRuntime {
   estimationSamples?: CapacityEstimateSample[]
 }
 
+export interface QuotaRedistributionRuntime {
+  resetAt: number
+  rounds: number
+  totalAddedPerShareUsd: number
+  remainingUsd: number | null
+  baseLimitUsd?: number
+  status: 'disabled' | 'waiting' | 'updated' | 'exhausted' | 'failed'
+  message: string
+  limits: Array<{ groupId: number; limitUsd: number }>
+  lastTriggerUsage: Record<string, number>
+  lastAppliedAt?: string
+  pending?: {
+    id: string
+    startedAt: string
+    perShareUsd: number
+    targets: Array<{ groupId: number; limitUsd: number }>
+    triggerUsage: Record<string, number>
+    completedGroupIds: number[]
+  }
+}
+
 export interface AccountRuntime {
   key: string
   email: string
@@ -133,6 +156,7 @@ export interface AccountRuntime {
   resolvedAt?: string
   reset: ResetRuntime
   capacity?: CapacityRuntime
+  redistribution?: QuotaRedistributionRuntime
   lastError?: string
   lastErrorAt?: string
   lastErrorJob?: JobKind

@@ -2,7 +2,7 @@ name: sub2api-quota-sync
 
 services:
   operations-console:
-    image: sub2api-operations-console:3.6.0
+    image: sub2api-operations-console:3.10.4
     container_name: sub2api-operations-console
     restart: unless-stopped
     init: true
@@ -18,12 +18,15 @@ services:
       COOKIE_PATH: /ops
       COOKIE_SECURE: "true"
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=160
       TZ: ${TZ:-Asia/Shanghai}
     ports:
       - "127.0.0.1:${OPS_HOST_PORT:-3002}:8080"
     volumes:
       - ./config.json:/app/config.json
       - ./data:/data
+      - /var/lib/sub2api-resource-monitor:/resource-monitor:ro
+      - /var/lib/sub2api-runtime-control:/runtime-control:ro
     networks:
       - sub2api-network
     read_only: true
@@ -39,9 +42,16 @@ services:
       timeout: 10s
       retries: 3
       start_period: 45s
+    mem_limit: 256m
+    memswap_limit: 384m
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: "3"
 
   ws-audit-relay:
-    image: sub2api-operations-console:3.6.0
+    image: sub2api-operations-console:3.10.4
     container_name: sub2api-ws-audit-relay
     command: ["node", "dist/server/ws-relay/index.js"]
     restart: unless-stopped
@@ -55,12 +65,14 @@ services:
       WS_AUDIT_CAPTURE_URL: http://operations-console:8080/internal/prompts/capture/ws
       WS_AUDIT_OUTBOX_PATH: /data/outbox
       WS_AUDIT_OUTBOX_MAX_BYTES: 536870912
-      WS_RELAY_MAX_MESSAGE_BYTES: 16777216
+      REQUEST_LIMITS_PATH: /request-limits/policy.json
+      NODE_OPTIONS: --max-old-space-size=96
       TZ: ${TZ:-Asia/Shanghai}
     ports:
       - "127.0.0.1:${WS_RELAY_HOST_PORT:-3003}:8090"
     volumes:
       - ./data/ws-audit-outbox:/data/outbox
+      - ./data/request-limits:/request-limits:ro
     networks:
       - sub2api-network
     read_only: true
@@ -79,7 +91,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    mem_limit: 192m
+    mem_limit: 384m
+    memswap_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: "3"
     cpus: 0.5
     pids_limit: 64
 

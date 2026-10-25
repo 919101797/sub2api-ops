@@ -74,3 +74,14 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/已删除 5 条审计记录/)).toBeInTheDocument()
   })
 })
+
+it('场景-003-08：按账号独立设置余量再均分，保存完整配置', async () => {
+  mount()
+  const first = screen.getByRole('checkbox', { name: '账号 1 的余量自动再均分' })
+  const second = screen.getByRole('checkbox', { name: '账号 2 的余量自动再均分' })
+  expect(first).not.toBeChecked(); expect(second).not.toBeChecked()
+  fireEvent.click(first)
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }))
+  await waitFor(() => expect(api.saveConfig).toHaveBeenCalledOnce())
+  expect(vi.mocked(api.saveConfig).mock.calls[0]![0].accounts.map(a => a.redistributionEnabled)).toEqual([true,false])
+})

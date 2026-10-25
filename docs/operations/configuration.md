@@ -81,3 +81,5 @@ Relay 的 `PROMPT_CAPTURE_SECRET` 必须与控制台一致。上游不得指向�
 ## 持久化
 
 Compose 挂载 `config.json` 与 `data/`；应用容器以 UID / GID `1000:1000` 运行。备份需覆盖业务配置、状态、媒体、Relay 发件箱及 PostgreSQL；凭据备份单独限制访问。不要用示例文件覆盖已有配置，不要删除非空发件箱。
+
+请求大小策略独立存储于 `data/request-limits/policy.json`，通过 Ops「系统设置 → 请求限制」维护，不在 `config.json` 设置。`REQUEST_LIMITS_PATH` 是中继读取路径，Compose 默认为 `/request-limits/policy.json`；本地开发中继时指向控制台生成的实际文件。资源采样和运行参数控制器的目录与安装要求见[部署](deployment.md#资源与请求大小设置)。

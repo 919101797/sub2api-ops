@@ -1,0 +1,7 @@
+.request-limits__subheading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 28px 0 16px; }
+.request-limits__subheading h3 { margin: 0; font-size: 15px; }
+.request-limits__row { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 16px; align-items: end; padding: 16px 0; border-top: 1px solid var(--line); }
+.request-limits__row .select-control { min-width: 0; }
+.request-limits__hint, .request-limits__empty { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.request-limits .runtime-settings__actions { margin-top: 22px; }
+@media (max-width: 680px) { .request-limits__row { grid-template-columns: minmax(0, 1fr) auto; } .request-limits__row > .field:first-child { grid-column: 1 / -1; } }

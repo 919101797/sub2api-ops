@@ -1,6 +1,6 @@
 {
   "name": "sub2api-operations-console",
-  "version": "3.6.0",
+  "version": "3.10.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "build:server": "tsc -p tsconfig.server.json && node scripts/copy-prompt-audit-schema.mjs",
     "start": "node dist/server/index.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "test": "vitest run && npm run test:compression",
+    "test": "vitest run && npm run test:compression && npm run test:runtime",
+    "test:runtime": "python3 -m unittest discover -s deploy/runtime-control",
     "test:compression": "node --test deploy/codex-compression-proxy.test.mjs",
     "test:watch": "vitest"
   },
@@ -55,16 +56,6 @@
     "vitest": "^4.1.10"
   },
   "engines": {
-    "node": ">=24.15.0 <25"
-  },
-  "description": "独立的 Sub2API 运维控制台：额度自动化、用量分析与输入审计",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/919101797/sub2api-ops.git"
-  },
-  "homepage": "https://github.com/919101797/sub2api-ops#readme",
-  "bugs": {
-    "url": "https://github.com/919101797/sub2api-ops/issues"
+    "node": ">=24"
   }
 }

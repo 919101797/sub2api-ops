@@ -20,6 +20,7 @@ import Select, { type MultiValue, type SingleValue } from 'react-select'
 
 import type { AccountConfig, DashboardResponse, ServiceConfig, SettingsOptionsResponse } from '@shared/contracts'
 import { Button, PageHeading } from '@/components/ui'
+import { RequestLimitsPanel } from '@/components/RequestLimitsPanel'
 import { ConfirmDialog } from '@/components/Dialog'
 import { api } from '@/lib/api'
 import { dateTime, fileSize } from '@/lib/format'
@@ -30,6 +31,7 @@ function emptyAccount(index: number): AccountConfig {
     email: '',
     label: '新 OpenAI 账号',
     shareCount: 3,
+    redistributionEnabled: false,
     reserveMode: 'usd',
     reserveValue: 0,
     targetGroupIds: [],
@@ -108,6 +110,7 @@ function selectedTimezoneOption(timezone: string): TimezoneOption {
 
 export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
   const [activeTab, setActiveTab] = useState('accounts')
+  const [requestsVisited, setRequestsVisited] = useState(false)
   const [savedConfig, setSavedConfig] = useState(() => structuredClone(dashboard.config))
   const [purgeTarget, setPurgeTarget] = useState<'all' | 'before' | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -227,6 +230,7 @@ export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
     { key: 'sync', label: '同步参数' },
     { key: 'concurrency', label: '峰谷策略' },
     { key: 'storage', label: '内容与存储' },
+    { key: 'requests', label: '请求限制' },
   ]
   const confirmPurgeBefore = () => {
     purge.reset()
@@ -279,7 +283,7 @@ export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
             aria-selected={activeTab === tab.key}
             aria-controls={`settings-panel-${tab.key}`}
             tabIndex={activeTab === tab.key ? 0 : -1}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'requests') setRequestsVisited(true) }}
             onKeyDown={(event) => {
               const next =
                 event.key === 'ArrowRight'
@@ -294,6 +298,7 @@ export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
               if (next === null) return
               event.preventDefault()
               setActiveTab(settingsTabs[next]!.key)
+              if (settingsTabs[next]!.key === 'requests') setRequestsVisited(true)
               document.getElementById(`settings-tab-${settingsTabs[next]!.key}`)?.focus()
             }}
           >
@@ -599,6 +604,14 @@ export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
                       loadingMessage={() => '正在读取分组…'}
                       aria-label={`账号 ${index + 1} 的目标分组`}
                     />
+                  </label>
+                  <label className="toggle-field span-2">
+                    <input type="checkbox" aria-label={`账号 ${index + 1} 的余量自动再均分`}
+                      checked={account.redistributionEnabled}
+                      onChange={(event) => changeAccount(index, { redistributionEnabled: event.target.checked })} />
+                    <span><strong>余量自动再均分</strong>
+                      <small>有人用完后，扣除已用和预留，将估算余量按现有份数给所有成员等额追加；按容量同步间隔检查。关闭后保留本周期已发额度。</small>
+                    </span>
                   </label>
                   <label className="toggle-field span-2">
                     <input
@@ -975,6 +988,7 @@ export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
           </section>
         </fieldset>
       </form>
+      {requestsVisited && <div hidden={activeTab !== 'requests'} role="tabpanel" id="settings-panel-requests" aria-labelledby="settings-tab-requests"><RequestLimitsPanel users={settingsOptions.data?.users ?? []} /></div>}
       {dirty && (
         <div className="settings-draft-bar">
           <span>更改将在保存后生效</span>

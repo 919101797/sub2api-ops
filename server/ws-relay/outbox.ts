@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmod, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createReadStream } from 'node:fs'
 
 import { PROMPT_WS_CAPTURE_CONTENT_TYPE } from '../prompt-audit/routes.js'
 
@@ -10,7 +11,7 @@ export interface WsAuditEnvelope {
   sequence: number
   capturedAt: string
   endpoint: string
-  payload: string
+  payload: string | Buffer
 }
 
 export interface WsAuditLogger {
@@ -20,7 +21,7 @@ export interface WsAuditLogger {
 }
 
 function envelopeFileName(id: string): string {
-  return `${createHash('sha256').update(id).digest('hex')}.json`
+  return `${createHash('sha256').update(id).digest('hex')}.capture`
 }
 
 function validateEnvelope(value: unknown): WsAuditEnvelope {
@@ -31,9 +32,11 @@ function validateEnvelope(value: unknown): WsAuditEnvelope {
   if (!Number.isSafeInteger(candidate.sequence) || Number(candidate.sequence) < 1) throw new Error('Invalid WS message sequence')
   if (typeof candidate.capturedAt !== 'string' || !Number.isFinite(Date.parse(candidate.capturedAt))) throw new Error('Invalid WS capture time')
   if (typeof candidate.endpoint !== 'string' || candidate.endpoint.length < 1 || candidate.endpoint.length > 128) throw new Error('Invalid WS endpoint')
-  if (typeof candidate.payload !== 'string') throw new Error('Invalid WS payload')
+  if (typeof candidate.payload !== 'string' && !Buffer.isBuffer(candidate.payload)) throw new Error('Invalid WS payload')
   return candidate as unknown as WsAuditEnvelope
 }
+
+interface StoredEnvelope extends Omit<WsAuditEnvelope, 'payload'> { payloadBytes: number; path: string; offset: number }
 
 export class WsAuditOutbox {
   private bytes = 0
@@ -47,7 +50,9 @@ export class WsAuditOutbox {
   async initialize(): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 })
     await chmod(this.directory, 0o700)
-    const names = (await readdir(this.directory)).filter((name) => /^[a-f0-9]{64}\.json$/.test(name))
+    const all = await readdir(this.directory)
+    if (all.some(name => /^[a-f0-9]{64}\.json$/.test(name))) throw new Error('发件箱包含旧格式消息，请先用旧版本完成投递')
+    const names = all.filter((name) => /^[a-f0-9]{64}\.capture$/.test(name))
     const sizes = await Promise.all(names.map((name) => stat(join(this.directory, name)).then((value) => value.size)))
     this.bytes = sizes.reduce((total, size) => total + size, 0)
   }
@@ -55,13 +60,18 @@ export class WsAuditOutbox {
   async persist(envelope: WsAuditEnvelope): Promise<void> {
     return this.serialized(async () => {
       validateEnvelope(envelope)
-      const content = `${JSON.stringify(envelope)}\n`
-      const contentBytes = Buffer.byteLength(content)
+      const { payload, ...metadata } = envelope
+      const raw = Buffer.isBuffer(payload) ? payload : Buffer.from(payload)
+      const header = Buffer.from(JSON.stringify({ ...metadata, payloadBytes: raw.length }))
+      const prefix = Buffer.alloc(4); prefix.writeUInt32BE(header.length)
+      const contentBytes = 4 + header.length + raw.length
       if (this.bytes + contentBytes > this.maximumBytes) throw new Error('WS audit outbox storage limit exceeded')
       const destination = join(this.directory, envelopeFileName(envelope.id))
       const temporary = join(this.directory, `.${envelopeFileName(envelope.id)}.${randomUUID()}.tmp`)
-      await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx', flush: true, mode: 0o600 })
       try {
+        const file = await open(temporary, 'wx', 0o600)
+        try { await file.writeFile(prefix); await file.writeFile(header); await file.writeFile(raw); await file.sync() }
+        finally { await file.close() }
         await rename(temporary, destination)
         const directory = await open(this.directory, 'r')
         await directory.sync().finally(() => directory.close())
@@ -73,11 +83,23 @@ export class WsAuditOutbox {
     })
   }
 
-  async entries(): Promise<WsAuditEnvelope[]> {
-    const names = (await readdir(this.directory)).filter((name) => /^[a-f0-9]{64}\.json$/.test(name))
-    const entries = await Promise.all(names.map(async (name) => {
-      const value = JSON.parse(await readFile(join(this.directory, name), 'utf8')) as unknown
-      return validateEnvelope(value)
+  async entries(): Promise<StoredEnvelope[]> {
+    const names = (await readdir(this.directory)).filter((name) => /^[a-f0-9]{64}\.capture$/.test(name))
+    const entries = await Promise.all(names.map(async (name): Promise<StoredEnvelope> => {
+      const path = join(this.directory, name)
+      const file = await open(path, 'r')
+      try {
+        const prefix = Buffer.alloc(4)
+        if ((await file.read(prefix, 0, 4, 0)).bytesRead !== 4) throw new Error('Invalid WS capture header')
+        const length = prefix.readUInt32BE()
+        if (length > 4096 || length < 1) throw new Error('Invalid WS capture header length')
+        const header = Buffer.alloc(length)
+        if ((await file.read(header, 0, length, 4)).bytesRead !== length) throw new Error('Incomplete WS capture header')
+        const metadata = JSON.parse(header.toString()) as Omit<StoredEnvelope, 'path' | 'offset'>
+        validateEnvelope({ ...metadata, payload: '' })
+        if (!Number.isSafeInteger(metadata.payloadBytes) || metadata.payloadBytes < 0 || (await file.stat()).size !== 4 + length + metadata.payloadBytes) throw new Error('Invalid WS capture length')
+        return { ...metadata, path, offset: 4 + length }
+      } finally { await file.close() }
     }))
     return entries.sort((left, right) => left.capturedAt.localeCompare(right.capturedAt) || left.sequence - right.sequence)
   }
@@ -92,7 +114,7 @@ export class WsAuditOutbox {
   }
 
   async pendingCount(): Promise<number> {
-    return (await readdir(this.directory)).filter((name) => /^[a-f0-9]{64}\.json$/.test(name)).length
+    return (await readdir(this.directory)).filter((name) => /^[a-f0-9]{64}\.capture$/.test(name)).length
   }
 
   async usage(): Promise<{ messages: number; bytes: number; maximumBytes: number }> {
@@ -176,12 +198,14 @@ export class WsAuditDelivery {
     }
   }
 
-  private async deliver(envelope: WsAuditEnvelope): Promise<boolean> {
+  private async deliver(envelope: StoredEnvelope): Promise<boolean> {
+    const stream = createReadStream(envelope.path, { start: envelope.offset })
     try {
       const response = await fetch(this.captureUrl, {
         method: 'POST',
         headers: {
           'content-type': PROMPT_WS_CAPTURE_CONTENT_TYPE,
+          'content-length': String(envelope.payloadBytes),
           'x-ops-capture-secret': this.captureSecret,
           'x-request-id': envelope.id,
           'x-ws-connection-id': envelope.connectionId,
@@ -189,16 +213,18 @@ export class WsAuditDelivery {
           'x-captured-at': envelope.capturedAt,
           'x-original-uri': envelope.endpoint,
         },
-        body: envelope.payload,
+        body: stream as unknown as NonNullable<Parameters<typeof fetch>[1]>['body'],
+        duplex: 'half',
         signal: AbortSignal.timeout(5_000),
-      })
+      } as RequestInit & { duplex: 'half' })
+      await response.body?.cancel()
       if (response.ok) return true
       this.logger.warn({ requestId: envelope.id, statusCode: response.status }, 'WS 审计采集端点暂不可用')
       return false
     } catch (error) {
       this.logger.warn({ err: error, requestId: envelope.id }, 'WS 审计消息将在本地重试')
       return false
-    }
+    } finally { stream.destroy() }
   }
 
   async close(): Promise<void> {

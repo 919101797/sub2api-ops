@@ -1,0 +1,2 @@
+// 对应官方 Sub2API 网关及其根路径别名，不接管 /api/v1 管理接口。
+export const isGatewayPath = (path: string) => /^\/(?:v1(?:beta)?(?:\/|$)|backend-api\/codex(?:\/|$)|antigravity\/(?:v1(?:beta)?(?:\/|$)|models(?:\/|$))|(?:api\/v3|v3)\/contents(?:\/|$)|contents(?:\/|$)|responses(?:\/|$)|alpha\/search(?:\/|$)|models(?:\/|$)|messages(?:\/|$)|chat\/completions(?:\/|$)|embeddings(?:\/|$)|images(?:\/|$)|videos(?:\/|$)|tts(?:\/|$)|stt(?:\/|$)|custom-voices(?:\/|$)|realtime(?:\/|$)|web_search(?:\/|$)|x_search(?:\/|$))/.test(path)

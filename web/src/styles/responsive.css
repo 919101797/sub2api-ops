@@ -78,10 +78,10 @@
   .workspace { touch-action: pan-y pinch-zoom; }
   .mobile-bar { position: sticky; top: 0; z-index: 50; height: calc(64px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) 20px 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: var(--paper); }
   .mobile-bar .brand-lockup { font-size: 14px; }.mobile-bar .brand-mark { width: 30px; height: 30px; flex-basis: 30px; border-radius: 8px; }.mobile-bar strong { font-size: 15px; }
-  .mobile-nav { position: fixed; z-index: 55; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(480px, calc(100% - 24px)); padding: 6px; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface-drawer); border: 1px solid var(--line-strong); box-shadow: 0 10px 30px #11241430; border-radius: 18px; }
+  .mobile-nav { position: fixed; z-index: 55; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(480px, calc(100% - 24px)); padding: 6px; display: grid; grid-template-columns: repeat(var(--mobile-nav-count), 1fr); background: var(--surface-drawer); border: 1px solid var(--line-strong); box-shadow: 0 10px 30px #11241430; border-radius: 18px; }
   .mobile-nav a { position: relative; min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted); border-radius: 11px; font-size: 11px; transition: color 240ms; }
   .mobile-nav a.active { color: var(--accent); }
-  .mobile-nav__indicator { position: absolute; left: 6px; top: 6px; bottom: 6px; width: calc((100% - 12px) / 5); border: 1px solid var(--accent-border); background: var(--olive-soft); border-radius: 12px; transform: translateX(calc(var(--mobile-active-index) * 100%)); transition: transform 360ms var(--ease-spring); }
+  .mobile-nav__indicator { position: absolute; left: 6px; top: 6px; bottom: 6px; width: calc((100% - 12px) / var(--mobile-nav-count)); border: 1px solid var(--accent-border); background: var(--olive-soft); border-radius: 12px; transform: translateX(calc(var(--mobile-active-index) * 100%)); transition: transform 360ms var(--ease-spring); }
   .mobile-nav--dragging .mobile-nav__indicator { transition: none; }
   .workspace__inner { padding: 28px 20px 108px; }
   .page-heading h1 { font-size: 48px; }

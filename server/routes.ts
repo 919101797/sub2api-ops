@@ -12,6 +12,10 @@ import { parseServiceConfig, saveConfig, type RuntimeEnv } from './config.js'
 import { PromptAuditRepository } from './prompt-audit/repository.js'
 import { Sub2ApiClient, Sub2ApiError } from './sub2api-client.js'
 import { StateStore } from './store.js'
+import { registerRequestLimitsRoutes } from './request-limits/routes.js'
+import type { RequestLimitsStore } from './request-limits/policy.js'
+import { registerRuntimeRoutes } from './runtime-control/routes.js'
+import { registerResourceRoutes } from './resource-monitor/repository.js'
 
 const loginSchema = z.object({
   email: z.email(),
@@ -144,9 +148,10 @@ export async function registerRoutes(
     analytics: AnalyticsRepository
     promptAuditRepository: PromptAuditRepository
     startedAt: string
+    requestLimits: RequestLimitsStore
   },
 ): Promise<void> {
-  const { env, client, store, engine, auth, analytics, promptAuditRepository, startedAt } = dependencies
+  const { env, client, store, engine, auth, analytics, promptAuditRepository, startedAt, requestLimits } = dependencies
   const apiPrefix = `${env.COOKIE_PATH.replace(/\/$/, '')}/api`
   const infrastructureCache: { key: string; value: DashboardResponse['infrastructure']; refreshedAt: number; pending: Promise<void> | null } = {
     key: '',
@@ -195,7 +200,7 @@ export async function registerRoutes(
       generatedAt: new Date().toISOString(),
       service: {
         health: jobs.some((job) => job.health === 'degraded') ? 'degraded' : 'healthy',
-        version: '2.12.1',
+        version: '3.10.3',
         startedAt,
       },
       config,
@@ -279,6 +284,11 @@ export async function registerRoutes(
   })
 
   const protectedRoute = async (request: FastifyRequest, reply: FastifyReply) => auth.requireAdmin(request, reply)
+  registerResourceRoutes(app, apiPrefix, protectedRoute)
+  registerRequestLimitsRoutes(app, apiPrefix, protectedRoute, req => auth.sessionUser(req).email,
+    summary => store.addEvent({ severity: 'info', category: 'configuration', summary }), requestLimits)
+  registerRuntimeRoutes(app, apiPrefix, protectedRoute, (request) => auth.sessionUser(request).email,
+    (summary) => store.addEvent({ severity: 'info', category: 'configuration', summary }))
 
   app.get(`${apiPrefix}/bootstrap`, { preHandler: protectedRoute }, async (request, reply) => {
     await handle(reply, async () => ({

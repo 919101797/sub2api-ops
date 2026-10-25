@@ -643,6 +643,7 @@ export class PromptAuditRepository {
     await this.pool.query(`
       UPDATE sub2api_ops.prompt_records
       SET expires_at = captured_at + make_interval(days => CASE WHEN risk_status = 'flagged' THEN $2::integer ELSE $1::integer END)
+      WHERE expires_at IS DISTINCT FROM captured_at + make_interval(days => CASE WHEN risk_status = 'flagged' THEN $2::integer ELSE $1::integer END)
     `, [this.normalRetentionDays, this.riskRetentionDays])
   }
 

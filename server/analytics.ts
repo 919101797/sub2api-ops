@@ -23,6 +23,14 @@ export interface AnalyticsCycleWindow {
   status: 'current' | 'completed'
 }
 
+interface AccountAnalyticsInput {
+  accountKey: string
+  accountId: number
+  groupIds: number[]
+  range: AnalyticsRange
+  cycle?: AnalyticsCycleWindow
+}
+
 interface ModelUsageRow {
   user_id: string | number
   email: string
@@ -255,11 +263,13 @@ function metrics(primitives: UsagePrimitives): UsageAnalyticsMetrics {
 
 export class AnalyticsRepository {
   private readonly pool: Pool
+  private readonly pending = new Map<string, Promise<AccountAnalyticsResponse>>()
+  private readonly results = new Map<string, { expiresAt: number; value: AccountAnalyticsResponse }>()
 
   constructor(config: AnalyticsDatabaseConfig) {
     this.pool = new Pool({
       ...config,
-      max: 4,
+      max: 1,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       statement_timeout: 15_000,
@@ -268,14 +278,31 @@ export class AnalyticsRepository {
     })
   }
 
-  async accountAnalytics(input: {
-    accountKey: string
-    accountId: number
-    groupIds: number[]
-    range: AnalyticsRange
-    cycle?: AnalyticsCycleWindow
-  }): Promise<AccountAnalyticsResponse> {
+  async accountAnalytics(input: AccountAnalyticsInput): Promise<AccountAnalyticsResponse> {
     const window = analyticsWindow(input)
+    const key = JSON.stringify([input.accountKey, input.accountId, [...new Set(input.groupIds)].sort((a, b) => a - b), input.range, input.cycle])
+    const cached = this.results.get(key)
+    if (cached && cached.expiresAt > Date.now()) return cached.value
+    const existing = this.pending.get(key)
+    if (existing) return existing
+
+    const request = this.readAccountAnalytics(input, window)
+    this.pending.set(key, request)
+    try {
+      const value = await request
+      const now = Date.now()
+      for (const [storedKey, result] of this.results) {
+        if (result.expiresAt <= now) this.results.delete(storedKey)
+      }
+      if (this.results.size >= 32) this.results.delete(this.results.keys().next().value!)
+      this.results.set(key, { expiresAt: now + 30_000, value })
+      return value
+    } finally {
+      this.pending.delete(key)
+    }
+  }
+
+  private async readAccountAnalytics(input: AccountAnalyticsInput, window: ReturnType<typeof analyticsWindow>): Promise<AccountAnalyticsResponse> {
     const { startAt, endAt } = window
     const [usageResult, eligibleUsersResult] = await Promise.all([
       this.pool.query<ModelUsageRow>(MODEL_USAGE_QUERY, [input.accountId, startAt.toISOString(), endAt.toISOString()]),
@@ -339,6 +366,7 @@ export class AnalyticsRepository {
   }
 
   async close(): Promise<void> {
+    this.results.clear()
     await this.pool.end()
   }
 }

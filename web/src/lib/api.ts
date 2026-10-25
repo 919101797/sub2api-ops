@@ -19,6 +19,9 @@ import type {
   SettingsOptionsResponse,
   TwoFactorInput,
 } from '@shared/contracts'
+import type { RequestLimitsInput, RequestLimitsStatus } from '@shared/request-limits'
+import type { RuntimeSettingsInput, RuntimeSettingsStatus } from '@shared/runtime-settings'
+import type { ResourcesResponse } from '@shared/resources'
 
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`
 
@@ -46,6 +49,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  requestLimits: () => request<RequestLimitsStatus>('/request-limits'),
+  saveRequestLimits: (input: RequestLimitsInput) => request<RequestLimitsStatus>('/request-limits', { method: 'PUT', body: JSON.stringify(input) }),
+  runtimeSettings: () => request<RuntimeSettingsStatus>('/resources/runtime'),
+  applyRuntimeSettings: (input: RuntimeSettingsInput) => request<RuntimeSettingsStatus>('/resources/runtime', { method: 'PUT', body: JSON.stringify(input) }),
+  resources: (startAt: string, endAt: string) => request<ResourcesResponse>(`/resources?${new URLSearchParams({ startAt, endAt })}`),
   authConfig: () => request<AuthConfigResponse>('/auth/config'),
   login: (input: LoginInput) => request<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
   login2fa: (input: TwoFactorInput) => request<LoginResponse>('/auth/2fa', { method: 'POST', body: JSON.stringify(input) }),
