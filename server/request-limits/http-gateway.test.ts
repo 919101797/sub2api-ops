@@ -214,3 +214,49 @@ it('场景-012-10：保活后的取消与上游断连及时释放资源，日志
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+it('场景-012-12：8 个小请求仍在上传时，第 9 个可直接上传完成并转发', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'gateway-unlimited-uploads-'))
+  const store = new RequestLimitsStore(join(dir, 'policy.json')); await store.initialize()
+  const guard = new RequestGuard(store, async () => 1)
+  const received: string[] = []
+  const upstream = createServer((req, res) => {
+    let body = ''; req.on('data', chunk => { body += String(chunk) })
+    req.once('end', () => { received.push(body); res.end(body) })
+  })
+  await new Promise<void>(r => upstream.listen(0, '127.0.0.1', r))
+  const spool = join(dir, 'spool')
+  const gateway = createServer(createHttpGateway(guard, `http://127.0.0.1:${(upstream.address() as {port:number}).port}`, spool))
+  await new Promise<void>(r => gateway.listen(0, '127.0.0.1', r))
+  const url = `http://127.0.0.1:${(gateway.address() as {port:number}).port}/v1/responses`
+  const requests: http.ClientRequest[] = [], responses: Promise<{ status: number; body: string }>[] = []
+  const start = (body: string) => {
+    let request!: http.ClientRequest
+    const response = new Promise<{ status: number; body: string }>((resolve, reject) => {
+      request = http.request(url, { method: 'POST', headers: { authorization: 'Bearer owner' } }, res => {
+        let text = ''; res.on('data', chunk => { text += String(chunk) }); res.once('end', () => resolve({ status: res.statusCode!, body: text })); res.once('error', reject)
+      })
+      request.once('error', reject); request.write(body)
+    })
+    void response.catch(() => {})
+    requests.push(request); responses.push(response)
+    return { request, response }
+  }
+  try {
+    for (let i = 0; i < 8; i++) start(`partial-${i}`)
+    await vi.waitFor(async () => expect(await readdir(spool)).toHaveLength(8))
+    const ninth = start('ninth'); ninth.request.end('-complete')
+    expect(await ninth.response).toEqual({ status: 200, body: 'ninth-complete' })
+    expect(received).toEqual(['ninth-complete'])
+    for (let i = 0; i < 8; i++) requests[i]!.end('-complete')
+    for (let i = 0; i < 8; i++) expect(await responses[i]).toEqual({ status: 200, body: `partial-${i}-complete` })
+    expect(received).toHaveLength(9)
+    await vi.waitFor(async () => expect(await readdir(spool)).toEqual([]))
+  } finally {
+    for (const request of requests) request.destroy()
+    gateway.closeAllConnections(); upstream.closeAllConnections()
+    await Promise.allSettled(responses)
+    await Promise.all([new Promise<void>(r => gateway.close(() => r())), new Promise<void>(r => upstream.close(() => r()))])
+    await rm(dir, { recursive: true, force: true })
+  }
+})

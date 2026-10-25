@@ -33,11 +33,9 @@ export async function prepareHttpSpool(root: string) {
 export function createHttpGateway(guard: RequestGuard, upstreamOrigin: string, spoolRoot: string, logger?: { info(values: Record<string, unknown>, message: string): void }) {
   const origin = new URL(upstreamOrigin)
   const transport = origin.protocol === 'https:' ? https : http
-  let uploads = 0
   return async (request: IncomingMessage, response: ServerResponse) => {
     let directory: string | undefined
     let release: (() => void) | undefined
-    let admitted = false
     let keepalive: ReturnType<typeof startResponseHeaderKeepalive> | undefined
     const started = performance.now()
     let userId: number | undefined, bytes = 0, authMs: number | undefined, uploadMs: number | undefined
@@ -49,8 +47,6 @@ export function createHttpGateway(guard: RequestGuard, upstreamOrigin: string, s
       userId = identity.userId
       authMs = Math.round(performance.now() - started)
       if (response.destroyed || request.destroyed) return
-      if (uploads >= 8) throw new RequestLimitError('请求上传通道繁忙，请稍后重试', 429)
-      uploads++; admitted = true
       const encoding = String(request.headers['content-encoding'] ?? 'identity').toLowerCase()
       const decoders = { gzip: createGunzip, br: createBrotliDecompress, zstd: createZstdDecompress }
       if (encoding !== 'identity' && !(encoding in decoders)) throw new RequestLimitError('不支持的请求压缩格式', 415)
@@ -81,7 +77,6 @@ export function createHttpGateway(guard: RequestGuard, upstreamOrigin: string, s
         if (/^(?:ENOSPC|EIO|EROFS|EACCES)$/.test((error as NodeJS.ErrnoException).code ?? '')) throw new RequestLimitError('请求临时存储不可用', 503)
         throw new RequestLimitError('请求正文或压缩内容无效', 400)
       } finally { request.off('aborted', aborted); request.off('error', aborted) }
-      uploads--; admitted = false
       uploadMs = Math.round(performance.now() - started - authMs)
       if (response.destroyed) return
       if (bytes > identity.policy.largeThresholdMiB * MIB) release = guard.gate.acquire(identity.policy.maxLargeConcurrent)
@@ -139,7 +134,6 @@ export function createHttpGateway(guard: RequestGuard, upstreamOrigin: string, s
         totalMs: Math.round(ended - started), upstreamStatus, status: response.statusCode,
         keepalive: keepalive?.sent ?? false, clientDisconnected: response.destroyed && !response.writableFinished,
       }, 'HTTP gateway request completed')
-      if (admitted) uploads--
       if (directory) await rm(directory, { recursive: true, force: true })
     }
   }

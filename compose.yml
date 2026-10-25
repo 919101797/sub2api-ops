@@ -2,7 +2,7 @@ name: sub2api-quota-sync
 
 services:
   operations-console:
-    image: sub2api-operations-console:3.10.4
+    image: sub2api-operations-console:3.10.5
     container_name: sub2api-operations-console
     restart: unless-stopped
     init: true
@@ -51,7 +51,7 @@ services:
         max-file: "3"
 
   ws-audit-relay:
-    image: sub2api-operations-console:3.10.4
+    image: sub2api-operations-console:3.10.5
     container_name: sub2api-ws-audit-relay
     command: ["node", "dist/server/ws-relay/index.js"]
     restart: unless-stopped
