@@ -200,7 +200,7 @@ export async function registerRoutes(
       generatedAt: new Date().toISOString(),
       service: {
         health: jobs.some((job) => job.health === 'degraded') ? 'degraded' : 'healthy',
-        version: '3.10.3',
+        version: '3.10.6',
         startedAt,
       },
       config,

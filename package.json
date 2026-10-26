@@ -1,6 +1,6 @@
 {
   "name": "sub2api-operations-console",
-  "version": "3.10.5",
+  "version": "3.10.6",
   "private": true,
   "type": "module",
   "scripts": {

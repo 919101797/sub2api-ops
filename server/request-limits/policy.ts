@@ -20,6 +20,10 @@ export class RequestLimitError extends Error {
   constructor(message: string, readonly status: number, readonly code = 'request_limit_error') { super(message) }
 }
 export const limitForUser = (policy: RequestLimitsPolicy, userId: number) => policy.userOverrides.find(r => r.userId === userId)?.maxMiB ?? policy.defaultMaxMiB
+function settingsKey(settings: Omit<RequestLimitsInput, 'revision'>): string {
+  return JSON.stringify([settings.defaultMaxMiB, settings.largeThresholdMiB, settings.maxLargeConcurrent,
+    [...settings.userOverrides].sort((a, b) => a.userId - b.userId)])
+}
 export class RequestLimitsStore {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(readonly path: string) {}
@@ -41,7 +45,9 @@ export class RequestLimitsStore {
   async save(value: RequestLimitsInput, actor: string): Promise<RequestLimitsStatus> {
     const task = this.queue.then(async () => {
       const { revision, ...settings } = requestLimitsInputSchema.parse(value)
-      if ((await this.read()).revision !== revision) throw new RequestLimitError('策略已变化，请重新载入后保存', 409)
+      const current = await this.read()
+      if (current.revision !== revision) throw new RequestLimitError('策略已变化，请重新载入后保存', 409)
+      if (settingsKey(current.policy) === settingsKey(settings)) return current
       const policy = policySchema.parse({ ...settings, version: 1, updatedAt: new Date().toISOString(), updatedBy: actor })
       const temporary = `${this.path}.${randomUUID()}.tmp`
       try {

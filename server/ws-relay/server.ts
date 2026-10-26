@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { isGatewayPath } from '../request-limits/paths.js'
 import { createHttpGateway, prepareHttpSpool } from '../request-limits/http-gateway.js'
 import { RequestGuard, type RequestIdentity } from '../request-limits/guard.js'
-import { HARD_MAX_MIB, MIB, RequestLimitError } from '../request-limits/policy.js'
+import { HARD_MAX_MIB, MIB, RequestLimitError, limitForUser } from '../request-limits/policy.js'
+import { maintainClientHeartbeat } from './heartbeat.js'
 
 import WebSocket, { WebSocketServer, type RawData } from 'ws'
 
@@ -54,7 +55,7 @@ function upstreamUrl(origin: string, request: IncomingMessage): string {
 
 function closePeer(peer: WebSocket, code: number, reason: Buffer | string): void {
   const validCode = code === 1000 || (code >= 1001 && code <= 1014 && ![1004, 1005, 1006].includes(code)) || (code >= 3000 && code <= 4999)
-  if (peer.readyState === WebSocket.OPEN) peer.close(validCode ? code : 1000, validCode ? reason.toString().slice(0, 123) : '')
+  if (peer.readyState === WebSocket.OPEN) peer.close(validCode ? code : 1011, validCode ? reason.toString().slice(0, 123) : 'peer disconnected')
   else if (peer.readyState === WebSocket.CONNECTING) peer.terminate()
 }
 
@@ -125,6 +126,7 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
     let sequence = 0
     let clientMessages = Promise.resolve()
     let closed = false
+    const startedAt = Date.now()
     let connectionPendingBytes = 0
     const isLargeConnection = identity.maxBytes > identity.policy.largeThresholdMiB * MIB
 
@@ -133,8 +135,16 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
       closed = true
       activeConnections -= 1
       clients.delete(client)
+      stopHeartbeat()
       client.resume()
     }
+
+    const stopHeartbeat = maintainClientHeartbeat(client, request.socket, () => {
+      logger.warn({ connectionId, userId: identity.userId, durationMs: Date.now() - startedAt }, 'WS 客户端心跳超时')
+      finish()
+      client.terminate()
+      upstream.terminate()
+    })
 
     client.on('message', (data, isBinary) => {
       if (closed) return
@@ -152,7 +162,9 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
       if (!isLargeConnection) pendingSmallBytes += payload.byteLength
       clientMessages = clientMessages.then(async () => {
         if (closed) return
-        if ((await guard.store.read()).revision !== identity.revision) {
+        const current = await guard.store.read()
+        const currentMaxBytes = limitForUser(current.policy, identity.userId) * MIB
+        if (currentMaxBytes !== identity.maxBytes || (currentMaxBytes > current.policy.largeThresholdMiB * MIB) !== isLargeConnection) {
           finish(); closePeer(client, 1012, 'request policy changed; reconnect'); closePeer(upstream, 1012, 'request policy changed; reconnect'); return
         }
         sequence += 1
@@ -199,10 +211,13 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
 
     client.on('close', (code, reason) => {
       finish()
-      closePeer(upstream, code, reason)
+      logger.info({ connectionId, userId: identity.userId, side: 'client', code, sequence, durationMs: Date.now() - startedAt }, 'WS 连接已关闭')
+      if (code === 1006) upstream.terminate()
+      else closePeer(upstream, code, reason)
     })
     upstream.on('close', (code, reason) => {
       finish()
+      logger.info({ connectionId, userId: identity.userId, side: 'upstream', code, sequence, durationMs: Date.now() - startedAt }, 'WS 连接已关闭')
       closePeer(client, code, reason)
     })
     client.on('error', (error) => logger.warn({ err: error, connectionId }, 'WS 客户端连接异常'))

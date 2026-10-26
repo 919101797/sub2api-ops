@@ -22,7 +22,7 @@ export function registerRequestLimitsRoutes(app: FastifyInstance, prefix: string
     const input = requestLimitsInputSchema.parse(req.body)
     const user = actor(req)
     const result = await store.save(input, user)
-    await record(`管理员 ${user} 更新请求大小：默认 ${input.defaultMaxMiB} MiB，${input.userOverrides.length} 个用户例外，大请求阈值 ${input.largeThresholdMiB} MiB，并发 ${input.maxLargeConcurrent}`).catch(() => app.log.error('请求大小审计写入失败'))
+    if (result.revision !== input.revision) await record(`管理员 ${user} 更新请求大小：默认 ${input.defaultMaxMiB} MiB，${input.userOverrides.length} 个用户例外，大请求阈值 ${input.largeThresholdMiB} MiB，并发 ${input.maxLargeConcurrent}`).catch(() => app.log.error('请求大小审计写入失败'))
     return result
   }))
 }

@@ -44,7 +44,7 @@ export function RequestLimitsPanel({ users }: { users: SettingsOptionsResponse['
           <Button variant="quiet" aria-label={`移除用户 ${row.userId || index + 1} 的独立上限`} disabled={save.isPending} onClick={() => set({ userOverrides: values.userOverrides.filter((_,i) => i !== index) })}><Trash2 size={16} /></Button>
         </div>
       })}
-      <p className="request-limits__hint">大额用户的 WebSocket 连接会占用一个大请求通道，断开后释放。修改设置后，已有连接在下一次输入时重连。</p>
+      <p className="request-limits__hint">大额用户的 WebSocket 连接会占用一个大请求通道，断开后释放。仅修改该用户的大小上限或大请求通道归属时，已有连接在下一次输入时重连。</p>
       {stale && <p className="form-error" role="alert">服务器策略已变化，请重新载入后保存。</p>}
       {save.error && <p className="form-error" role="alert">{save.error.message}</p>}
       {save.isSuccess && <p className="save-notice" role="status">请求限制已保存，新请求立即生效。</p>}

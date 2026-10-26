@@ -17,6 +17,7 @@ const cleanup: Array<() => Promise<void>> = []
 
 afterEach(async () => {
   while (cleanup.length > 0) await cleanup.pop()?.()
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -34,6 +35,58 @@ function waitForMessage(socket: WebSocket): Promise<string> {
     socket.once('close', (code) => reject(new Error(`WS closed ${code} before returning a frame`)))
   })
 }
+
+async function heartbeatRelay() {
+  const root = await mkdtemp(join(tmpdir(), 'ws-heartbeat-'))
+  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  const store = new RequestLimitsStore(join(root, 'policy.json')); await store.initialize()
+  await store.save({ revision: (await store.read()).revision, defaultMaxMiB: 2, largeThresholdMiB: 1, maxLargeConcurrent: 1, userOverrides: [] }, 'admin')
+  const guard = new RequestGuard(store, async () => 1)
+  const upstream = createServer()
+  const sockets = new WebSocketServer({ server: upstream })
+  let upstreamMessages = 0
+  const connected = new Promise<WebSocket>(resolve => sockets.once('connection', peer => {
+    peer.on('message', data => { upstreamMessages++; peer.send(data) })
+    resolve(peer)
+  }))
+  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  cleanup.push(() => new Promise<void>(resolve => sockets.close(() => upstream.close(() => resolve()))))
+  const relay = await createWsAuditRelay({ WS_RELAY_HOST: '127.0.0.1', WS_RELAY_PORT: 0,
+    WS_RELAY_UPSTREAM_ORIGIN: `ws://127.0.0.1:${(upstream.address() as {port:number}).port}`,
+    WS_AUDIT_CAPTURE_URL: 'http://127.0.0.1:1/capture', WS_AUDIT_OUTBOX_PATH: join(root, 'outbox'),
+    WS_AUDIT_OUTBOX_MAX_BYTES: 512 * 1024 * 1024, REQUEST_LIMITS_PATH: store.path, PROMPT_CAPTURE_SECRET: 's'.repeat(32),
+  }, { info: vi.fn(), warn: vi.fn(), error: vi.fn() }, guard)
+  await relay.listen(); cleanup.push(() => relay.close())
+  const client = new WebSocket(`ws://127.0.0.1:${relay.address()!.port}/v1/responses`, {
+    headers: { authorization: 'Bearer heartbeat-test', 'x-request-id': 'heartbeat-test' },
+  })
+  client.on('error', () => {}); cleanup.push(async () => client.terminate())
+  await waitForOpen(client)
+  return { client, peer: await connected, guard, messages: () => upstreamMessages }
+}
+
+it('场景-007-07：真实 WS 控制帧只在传输层保活，业务请求只转发一次', async () => {
+  const interval = globalThis.setInterval
+  vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: (...args: unknown[]) => void, delay: number) =>
+    interval(fn, delay === 25_000 ? 10 : delay)) as typeof setInterval)
+  const fresh = await heartbeatRelay()
+  let pings = 0
+  fresh.client.on('ping', () => { pings++ })
+  await vi.waitFor(() => expect(pings).toBeGreaterThanOrEqual(6), { timeout: 2000 })
+  const response = waitForMessage(fresh.client)
+  fresh.client.send('after idle')
+  expect(await response).toBe('after idle')
+  expect(fresh.messages()).toBe(1)
+})
+
+it('场景-007-08：客户端异常断开立即关闭上游并释放大请求通道', async () => {
+  const { client, peer, guard } = await heartbeatRelay()
+  expect(guard.gate.active).toBe(1)
+  const closed = new Promise<number>(resolve => peer.once('close', resolve))
+  client.terminate()
+  expect(await closed).toBe(1006)
+  await vi.waitFor(() => expect(guard.gate.active).toBe(0))
+})
 
 describe('WS audit relay', () => {
   it('forwards frames unchanged while durably delivering every client turn', async () => {
@@ -181,6 +234,12 @@ it('场景-012-06：WS 按用户额度握手、保护大额连接、热更新后
   const echoed=waitForMessage(owner); owner.send('x'.repeat(1024*1024+1)); expect((await echoed).length).toBe(1024*1024+1)
   const denied=connect('owner','busy-conn'); denied.on('error',()=>{})
   expect(await new Promise<number>(r => denied.once('unexpected-response',(_req,res) => {res.resume();r(res.statusCode!);denied.terminate()}))).toBe(429)
+  // 场景-012-13：仅调整其他用户和通道数量，不打断当前用户。
+  const before = await store.read()
+  const unrelated = await store.save({revision:before.revision,...values,maxLargeConcurrent:3,userOverrides:[...values.userOverrides,{userId:2,maxMiB:1}]},'admin')
+  const continued = waitForMessage(owner); owner.send('still running'); expect(await continued).toBe('still running')
+  await store.save({revision:unrelated.revision,...values,maxLargeConcurrent:3,userOverrides:[{userId:1,maxMiB:2},{userId:2,maxMiB:1}]},'another-admin')
+  const unchanged = waitForMessage(owner); owner.send('unchanged'); expect(await unchanged).toBe('unchanged')
   const latest=await store.read(); await store.save({revision:latest.revision,...values,userOverrides:[]},'admin')
   const reconnected=new Promise<number>(r => owner.once('close',r)); owner.send('next'); expect(await reconnected).toBe(1012)
   await vi.waitFor(() => expect(guard.gate.active).toBe(0))

@@ -24,6 +24,9 @@ it('场景-012-04：只允许管理员读写；校验范围和修订；操作人
     expect((await put(input)).json().policy.updatedBy).toBe('real-admin')
     expect((await app.inject({url:'/ops/api/request-limits',headers:{cookie:'admin'}})).json().policy.maxLargeConcurrent).toBe(5)
     expect(record).toHaveBeenCalledOnce()
+    const saved = (await app.inject({ url:'/ops/api/request-limits', headers:{cookie:'admin'} })).json()
+    expect((await put({ ...input, revision: saved.revision })).json()).toEqual(saved)
+    expect(record).toHaveBeenCalledOnce()
     expect((await put(input)).statusCode).toBe(409)
   } finally { await app.close(); await rm(dir,{recursive:true,force:true}) }
 })
