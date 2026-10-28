@@ -105,3 +105,19 @@ it('场景-003-12：上游已写入但响应丢失时，重读绝对目标避免
   expect(f.groups.map(g => g.weekly_limit_usd)).toEqual([466.66,466.66])
   expect(f.store.snapshot().accounts.one!.redistribution!.rounds).toBe(1)
 })
+
+it('场景-003-12：已发轮次或在途计划缺少容量水位时停止，不重复发放', async () => {
+  const f = await fixture()
+  await f.service.run(f.config, f.input)
+  const calls = f.update.mock.calls.length
+  await f.store.updateAccount('one', account => { delete account.redistribution!.committedCapacityUsd })
+  await expect(f.service.run(f.config, f.input)).rejects.toThrow('容量水位')
+  expect(f.update).toHaveBeenCalledTimes(calls)
+  await f.store.updateAccount('one', account => {
+    account.redistribution!.rounds = 0
+    account.redistribution!.pending = { id: 'incomplete', startedAt: new Date().toISOString(), perShareUsd: 1,
+      targets: [{ groupId: 5, limitUsd: 500 }], completedGroupIds: [], committedCapacityUsd: Number.NaN }
+  })
+  await expect(f.service.run(f.config, f.input)).rejects.toThrow('容量水位')
+  expect(f.update).toHaveBeenCalledTimes(calls)
+})

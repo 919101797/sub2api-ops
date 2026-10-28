@@ -47,6 +47,11 @@ export class QuotaRedistributor {
     }
     if (![input.estimatedCycleCapacityUsd, input.reserveUsd, input.standardCostUsd, input.usedPercent].every(Number.isFinite)
       || input.standardCostUsd < 0 || input.usedPercent < 0) throw new Error('再均分所需的容量观测无效')
+    const validWatermark = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+    if ((state.rounds > 0 && !validWatermark(state.committedCapacityUsd))
+      || (state.pending && !validWatermark(state.pending.committedCapacityUsd))) {
+      throw new Error('再均分记录缺少有效的容量水位，已停止追加，请核对本周期分配记录')
+    }
     state.baseLimitUsd = roundUsd(Math.max(0, input.estimatedCycleCapacityUsd - input.reserveUsd) / config.shareCount)
     state.remainingUsd = centsDown(input.estimatedCycleCapacityUsd - input.standardCostUsd - input.reserveUsd)
     const allocationBase = Math.max(state.committedCapacityUsd ?? 0, input.standardCostUsd)
