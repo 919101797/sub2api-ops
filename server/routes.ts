@@ -8,7 +8,7 @@ import { AnalyticsRepository } from './analytics.js'
 import type { AnalyticsCycleWindow } from './analytics.js'
 import { AutomationEngine } from './automation/engine.js'
 import { AuthService } from './auth.js'
-import { parseServiceConfig, saveConfig, type RuntimeEnv } from './config.js'
+import { parseServiceConfig, type RuntimeEnv } from './config.js'
 import { PromptAuditRepository } from './prompt-audit/repository.js'
 import { Sub2ApiClient, Sub2ApiError } from './sub2api-client.js'
 import { StateStore } from './store.js'
@@ -436,7 +436,6 @@ export async function registerRoutes(
   app.put(`${apiPrefix}/config`, { preHandler: protectedRoute }, async (request, reply) => {
     await handle(reply, async () => {
       const config = parseServiceConfig(request.body)
-      await saveConfig(env.CONFIG_PATH, config)
       await promptAuditRepository.configureRetention(
         config.promptAudit.normalRetentionDays,
         config.promptAudit.riskRetentionDays,

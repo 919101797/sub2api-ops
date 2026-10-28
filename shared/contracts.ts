@@ -132,18 +132,19 @@ export interface QuotaRedistributionRuntime {
   rounds: number
   totalAddedPerShareUsd: number
   remainingUsd: number | null
+  unallocatedUsd: number | null
+  committedCapacityUsd?: number
   baseLimitUsd?: number
   status: 'disabled' | 'waiting' | 'updated' | 'exhausted' | 'failed'
   message: string
   limits: Array<{ groupId: number; limitUsd: number }>
-  lastTriggerUsage: Record<string, number>
   lastAppliedAt?: string
   pending?: {
     id: string
     startedAt: string
     perShareUsd: number
     targets: Array<{ groupId: number; limitUsd: number }>
-    triggerUsage: Record<string, number>
+    committedCapacityUsd: number
     completedGroupIds: number[]
   }
 }

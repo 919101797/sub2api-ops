@@ -18,8 +18,8 @@ export interface RedistributionInput {
 const centsDown = (value: number) => Math.floor((Math.max(0, value) + 1e-9) * 100) / 100
 
 export function freshRedistribution(resetAt: number): QuotaRedistributionRuntime {
-  return { resetAt, rounds: 0, totalAddedPerShareUsd: 0, remainingUsd: null,
-    status: 'waiting', message: '等待成员用完额度', limits: [], lastTriggerUsage: {} }
+  return { resetAt, rounds: 0, totalAddedPerShareUsd: 0, remainingUsd: null, unallocatedUsd: null,
+    status: 'waiting', message: '等待检查可分配余量', limits: [] }
 }
 
 export class QuotaRedistributor {
@@ -49,7 +49,11 @@ export class QuotaRedistributor {
       || input.standardCostUsd < 0 || input.usedPercent < 0) throw new Error('再均分所需的容量观测无效')
     state.baseLimitUsd = roundUsd(Math.max(0, input.estimatedCycleCapacityUsd - input.reserveUsd) / config.shareCount)
     state.remainingUsd = centsDown(input.estimatedCycleCapacityUsd - input.standardCostUsd - input.reserveUsd)
-    if (input.usedPercent >= 100 || state.remainingUsd < config.shareCount * 0.01) {
+    const allocationBase = Math.max(state.committedCapacityUsd ?? 0, input.standardCostUsd)
+    const unallocated = (committed: number) => centsDown(input.estimatedCycleCapacityUsd! - input.reserveUsd!
+      - Math.max(committed, input.standardCostUsd))
+    state.unallocatedUsd = unallocated(state.pending?.committedCapacityUsd ?? allocationBase)
+    if (!state.pending && (input.usedPercent >= 100 || state.remainingUsd < config.shareCount * 0.01)) {
       await save('exhausted', input.usedPercent >= 100 ? '上游额度已用尽，停止追加' : '扣除预留后已无可均分余额'); return
     }
     const groups = new Map(input.groups.map(group => [group.id, group]))
@@ -57,23 +61,20 @@ export class QuotaRedistributor {
       && config.targetGroupIds.includes(subscription.group_id)
       && (!subscription.expires_at || Date.parse(subscription.expires_at) > Date.now()))
     if (!members.length) { await save('waiting', '没有有效成员，暂不追加'); return }
-    if (members.some(member => !Number.isFinite(member.weekly_usage_usd)
-      || member.weekly_usage_usd! < 0 || !groups.has(member.group_id))) {
-      await save('waiting', '成员周用量无法确认，暂不追加'); return
-    }
     if (!config.targetGroupIds.length || config.targetGroupIds.some(id => {
       const limit = groups.get(id)?.weekly_limit_usd
       return typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0
     })) { await save('waiting', '目标分组须有有效的有限周限'); return }
 
     if (!state.pending) {
-      const exhausted = members.filter(member => member.weekly_usage_usd! >= groups.get(member.group_id)!.weekly_limit_usd!
-        && (state.lastTriggerUsage[String(member.id)] === undefined || member.weekly_usage_usd! > state.lastTriggerUsage[String(member.id)]! + 1e-8))
-      if (!exhausted.length) { await save('waiting', '等待成员用完当前额度'); return }
-      const perShareUsd = Math.floor((state.remainingUsd * 100 + 1e-7) / config.shareCount) / 100
+      if (state.unallocatedUsd < config.shareCount * 0.01) {
+        await save('waiting', '当前余量已分配，等待新增可分配额度'); return
+      }
+      const perShareUsd = Math.floor((state.unallocatedUsd * 100 + 1e-7) / config.shareCount) / 100
       state.pending = { id: randomUUID(), startedAt: new Date().toISOString(), perShareUsd,
         targets: config.targetGroupIds.map(id => ({ groupId: id, limitUsd: roundUsd(groups.get(id)!.weekly_limit_usd! + perShareUsd) })),
-        triggerUsage: Object.fromEntries(exhausted.map(member => [String(member.id), member.weekly_usage_usd!])), completedGroupIds: [] }
+        committedCapacityUsd: allocationBase + roundUsd(perShareUsd * config.shareCount), completedGroupIds: [] }
+      state.unallocatedUsd = unallocated(state.pending.committedCapacityUsd)
       await save('waiting', '正在均等追加本轮额度')
     }
     const pending = state.pending
@@ -105,14 +106,16 @@ export class QuotaRedistributor {
       }
       state.rounds += 1
       state.totalAddedPerShareUsd = roundUsd(state.totalAddedPerShareUsd + pending.perShareUsd)
-      state.lastTriggerUsage = { ...state.lastTriggerUsage, ...pending.triggerUsage }
+      state.committedCapacityUsd = pending.committedCapacityUsd
+      state.unallocatedUsd = unallocated(state.committedCapacityUsd)
       state.lastAppliedAt = new Date().toISOString()
       delete state.pending
       await save('updated', `第 ${state.rounds} 轮已完成，每份追加 $${pending.perShareUsd.toFixed(2)}`)
       await this.store.addEvent({ category: 'capacity', severity: 'success', accountKey: config.key,
         summary: `${config.label}：第 ${state.rounds} 轮余量再均分，每份追加 $${pending.perShareUsd.toFixed(2)}`,
         details: { roundId: pending.id, resetAt: state.resetAt, perShareUsd: pending.perShareUsd,
-          remainingUsd: state.remainingUsd, reserveUsd: input.reserveUsd, shareCount: config.shareCount, targets: pending.targets } })
+          remainingUsd: state.remainingUsd, unallocatedUsd: state.unallocatedUsd, committedCapacityUsd: state.committedCapacityUsd,
+          reserveUsd: input.reserveUsd, shareCount: config.shareCount, targets: pending.targets } })
     } catch (error) {
       await save('failed', '本轮部分分组尚未完成，下次继续原目标')
       throw error

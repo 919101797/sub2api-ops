@@ -10,7 +10,7 @@ import Fastify from 'fastify'
 import { AnalyticsRepository } from './analytics.js'
 import { AutomationEngine } from './automation/engine.js'
 import { AuthService } from './auth.js'
-import { loadConfig, loadEnv } from './config.js'
+import { loadConfig, loadEnv, saveConfig } from './config.js'
 import { PromptAuditRepository } from './prompt-audit/repository.js'
 import { registerPromptCaptureRoute } from './prompt-audit/routes.js'
 import { PromptAuditService } from './prompt-audit/service.js'
@@ -42,7 +42,7 @@ const database = {
   password: env.SUB2API_DB_PASSWORD,
 }
 const userLimits = new UserLimitsRepository(database)
-const engine = new AutomationEngine(config, client, store, () => userLimits.users())
+const engine = new AutomationEngine(config, client, store, () => userLimits.users(), next => saveConfig(env.CONFIG_PATH, next))
 await engine.initialize()
 const auth = new AuthService(client, store)
 const analytics = new AnalyticsRepository(database)

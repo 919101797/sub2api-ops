@@ -20,21 +20,23 @@ async function fixture() {
   const groups = [5, 13].map(id => ({ id, name: `Group ${id}`, rate_multiplier: 1, daily_limit_usd: null, weekly_limit_usd: 300, monthly_limit_usd: null }))
   const update = vi.spyOn(client, 'updateGroupWeeklyLimit').mockImplementation(async (group, limit) => { groups.find(g => g.id === group.id)!.weekly_limit_usd = limit; return { ...group, weekly_limit_usd: limit } })
   const input = { resetAt: 2000000000, usedPercent: 40, standardCostUsd: 400, estimatedCycleCapacityUsd: 1000, reserveUsd: 100, resetReady: true,
-    groups, subscriptions: [ { id: 1, user_id: 1, group_id: 5, status: 'active' as const, weekly_usage_usd: 300 }, { id: 2, user_id: 2, group_id: 13, status: 'active' as const, weekly_usage_usd: 50 } ] }
+    groups, subscriptions: [ { id: 1, user_id: 1, group_id: 5, status: 'active' as const, weekly_usage_usd: 100 }, { id: 2, user_id: 2, group_id: 13, status: 'active' as const, weekly_usage_usd: 50 } ] }
   const service = new QuotaRedistributor(client, store, () => config)
   return { config, input, groups, store, client, update, service, path }
 }
-it('场景-003-08/09/10：给所有分组等额追加，同样用量不重复，后续再次耗尽可继续', async () => {
+it('场景-003-08/09/10：未用完即等额追加，只追加新增容量，消耗已发额度不重复', async () => {
   const f = await fixture()
   await f.service.run(f.config, f.input)
   expect(f.update.mock.calls.map(c => [c[0].id, c[1]])).toEqual([[5,466.66],[13,466.66]])
   expect(f.store.snapshot().accounts.one!.redistribution).toMatchObject({ rounds: 1, totalAddedPerShareUsd: 166.66 })
   await f.service.run(f.config, f.input)
   expect(f.update).toHaveBeenCalledTimes(2)
-  f.input.subscriptions[0]!.weekly_usage_usd = 466.66
-  await f.service.run(f.config, { ...f.input, standardCostUsd: 600, usedPercent: 60 })
-  expect(f.groups.map(g => g.weekly_limit_usd)).toEqual([566.66,566.66])
+  await f.service.run(f.config, { ...f.input, standardCostUsd: 500, usedPercent: 50 })
+  expect(f.update).toHaveBeenCalledTimes(2)
+  await f.service.run(f.config, { ...f.input, estimatedCycleCapacityUsd: 1200, standardCostUsd: 600, usedPercent: 50 })
+  expect(f.groups.map(g => g.weekly_limit_usd)).toEqual([533.33,533.33])
   expect(f.store.snapshot().accounts.one!.redistribution!.rounds).toBe(2)
+  expect(f.store.snapshot().accounts.one!.redistribution).toMatchObject({ committedCapacityUsd: 1099.99, unallocatedUsd: 0.01 })
 })
 it('场景-003-12：部分失败后重启只继续同一轮，不重复增加已完成组', async () => {
   const f = await fixture()
@@ -58,13 +60,40 @@ it('场景-003-11/13：关闭、不足一美分、上游已满或重置未完成
   await f.service.run(f.config, f.input)
   await f.service.run(f.config, { ...f.input, resetAt: f.input.resetAt + 604800, resetReady: false })
   expect(f.store.snapshot().accounts.one!.redistribution!.message).toContain('重置')
-  await f.service.run(f.config, { ...f.input, resetAt: f.input.resetAt + 604800, subscriptions: f.input.subscriptions.map(s => ({ ...s, weekly_usage_usd: 0 })) })
-  expect(f.store.snapshot().accounts.one!.redistribution).toMatchObject({ rounds: 0, limits: [] })
+  for (const group of f.groups) group.weekly_limit_usd = 300
+  await f.service.run(f.config, { ...f.input, resetAt: f.input.resetAt + 604800, standardCostUsd: 700, usedPercent: 70,
+    subscriptions: f.input.subscriptions.map(s => ({ ...s, weekly_usage_usd: 0 })) })
+  expect(f.store.snapshot().accounts.one!.redistribution).toMatchObject({ rounds: 1, totalAddedPerShareUsd: 66.66 })
+  expect(f.groups.map(g => g.weekly_limit_usd)).toEqual([366.66,366.66])
 })
-it('场景-003-11：成员用量未知时不发放', async () => {
+it('场景-003-08：个人用量未知也按账号余额均分，不依赖成员触发', async () => {
   const f = await fixture()
   await f.service.run(f.config, { ...f.input, subscriptions: [{ ...f.input.subscriptions[0]!, weekly_usage_usd: Number.NaN }] })
-  expect(f.update).not.toHaveBeenCalled()
+  expect(f.groups.map(g => g.weekly_limit_usd)).toEqual([466.66,466.66])
+})
+
+it('场景-003-09/10：关闭重开、进程重启与估值回落后恢复不重复分配', async () => {
+  const f = await fixture()
+  await f.service.run(f.config, f.input)
+  f.config.redistributionEnabled = false
+  await f.service.run(f.config, f.input)
+  f.config.redistributionEnabled = true
+  const store = new StateStore(f.path); await store.initialize()
+  const service = new QuotaRedistributor(f.client, store, () => f.config)
+  for (const estimatedCycleCapacityUsd of [1000,800,1000]) await service.run(f.config, { ...f.input, estimatedCycleCapacityUsd })
+  expect(f.update).toHaveBeenCalledTimes(2)
+  expect(store.snapshot().accounts.one!.redistribution!.rounds).toBe(1)
+})
+
+it('场景-003-10：新增容量已被消耗时只发当前余额，不在下一轮重复发放', async () => {
+  const f = await fixture()
+  await f.service.run(f.config, f.input)
+  const next = { ...f.input, estimatedCycleCapacityUsd: 1200, standardCostUsd: 1000, usedPercent: 85 }
+  await f.service.run(f.config, next)
+  await f.service.run(f.config, next)
+  expect(f.groups.map(g => g.weekly_limit_usd)).toEqual([499.99,499.99])
+  expect(f.update).toHaveBeenCalledTimes(4)
+  expect(f.store.snapshot().accounts.one!.redistribution).toMatchObject({ committedCapacityUsd: 1099.99, rounds: 2 })
 })
 
 it('场景-003-12：上游已写入但响应丢失时，重读绝对目标避免重复追加', async () => {

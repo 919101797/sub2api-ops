@@ -66,12 +66,14 @@ export class AutomationEngine {
   private accountQueues = new Map<string, Promise<void>>()
   private userConcurrencyTimer: NodeJS.Timeout | undefined
   private userConcurrencyQueue: Promise<void> = Promise.resolve()
+  private configWrites: Promise<void> = Promise.resolve()
 
   constructor(
     config: ServiceConfig,
     private readonly client: Sub2ApiClient,
     private readonly store: StateStore,
     private readonly readUserLimits: () => Promise<UserLimitState[]>,
+    private readonly persistConfig: (config: ServiceConfig) => Promise<void>,
   ) {
     this.config = config
   }
@@ -99,12 +101,35 @@ export class AutomationEngine {
   }
 
   async replaceConfig(config: ServiceConfig): Promise<void> {
-    const restoreDefault = this.config.userConcurrencySchedule.enabled && !config.userConcurrencySchedule.enabled
-    this.stop()
-    this.config = structuredClone(config)
-    await this.store.ensureAccounts(config.accounts)
-    if (restoreDefault) await this.runUserConcurrency(new Date(), true)
-    this.start()
+    await this.writeConfig(async () => {
+      const next = structuredClone(config)
+      const restoreDefault = this.config.userConcurrencySchedule.enabled && !next.userConcurrencySchedule.enabled
+      await this.persistConfig(next)
+      this.stop()
+      this.config = next
+      await this.store.ensureAccounts(next.accounts)
+      if (restoreDefault) await this.runUserConcurrency(new Date(), true)
+      this.start()
+    })
+  }
+
+  private writeConfig(task: () => Promise<void>): Promise<void> {
+    const pending = this.configWrites.then(task)
+    this.configWrites = pending.catch(() => undefined)
+    return pending
+  }
+
+  private async disableRedistributionForReset(key: string): Promise<void> {
+    await this.writeConfig(async () => {
+      const current = this.config.accounts.find(account => account.key === key)
+      if (!current?.redistributionEnabled) return
+      const next = structuredClone(this.config)
+      next.accounts.find(account => account.key === key)!.redistributionEnabled = false
+      await this.persistConfig(next)
+      this.config = next
+      await this.store.addEvent({ category: 'configuration', severity: 'info', accountKey: key,
+        summary: `${current.label}：进入新周期，已自动关闭余量再均分` })
+    })
   }
 
   async runUserConcurrency(at = new Date(), forceDefault = false): Promise<void> {
@@ -358,6 +383,7 @@ export class AutomationEngine {
   }
 
   private async completeReset(config: AccountConfig, event: PendingResetEvent): Promise<void> {
+    await this.disableRedistributionForReset(config.key)
     if (event.restoreRedistributionLimits) {
       for (const id of event.restoreRedistributionLimits.groupIds) {
         const current = this.config.accounts.find(item => item.key === config.key)
@@ -380,7 +406,9 @@ export class AutomationEngine {
       })
     }
     await this.store.updateAccount(config.key, (draft) => {
-      if (draft.redistribution) draft.redistribution = freshRedistribution(event.observation.resetAt)
+      if (draft.redistribution) draft.redistribution = {
+        ...freshRedistribution(event.observation.resetAt), status: 'disabled', message: '新周期已关闭再均分，按需重新开启',
+      }
       draft.reset.observation = event.observation
       draft.reset.lastHandledResetAt = event.observation.resetAt
       draft.reset.lastCompletedEventAt = nowIso()
@@ -579,7 +607,8 @@ export class AutomationEngine {
     for (const group of groups) {
       const current = group.weekly_limit_usd
       const floor = currentRedistribution?.limits.find(item => item.groupId === group.id)?.limitUsd ?? 0
-      const targetLimit = Math.max(estimate.perShareCapacityUsd, floor)
+      // 本周期开始追加后，由再分配账本维护周限，避免容量增长同时抬高基础周限和追加额度。
+      const targetLimit = floor > 0 ? floor : estimate.perShareCapacityUsd
       const shouldUpdate = !currentRedistribution?.pending && (current === null
         || Math.abs(current - targetLimit) >= this.config.capacitySync.minimumChangeUsd)
       if (!shouldUpdate) {

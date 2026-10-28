@@ -8,12 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ServiceConfig } from '../../shared/contracts.js'
 import { StateStore } from '../store.js'
+import { loadConfig, saveConfig } from '../config.js'
 import { Sub2ApiClient, type UpstreamUser } from '../sub2api-client.js'
 import { AutomationEngine } from './engine.js'
 
 const temporaryDirectories: string[] = []
 const readUsers = vi.fn<() => Promise<UpstreamUser[]>>()
-beforeEach(() => readUsers.mockReset().mockResolvedValue([]))
+const persistConfig = vi.fn<(config: ServiceConfig) => Promise<void>>().mockResolvedValue(undefined)
+beforeEach(() => { readUsers.mockReset().mockResolvedValue([]); persistConfig.mockClear() })
 
 const config: ServiceConfig = {
   version: 11,
@@ -42,7 +44,7 @@ const config: ServiceConfig = {
   },
   accounts: [{
     key: '163',
-    email: 'account-a@example.com',
+    email: 'one@example.com',
     label: '163.com 主账号',
     shareCount: 3,
     redistributionEnabled: false,
@@ -66,7 +68,7 @@ describe('AutomationEngine capacity synchronization', () => {
     const store = new StateStore(join(directory, 'state.json'))
     await store.initialize()
     const client = new Sub2ApiClient('http://example.test', 'test-key', 1_000)
-    const engine = new AutomationEngine(config, client, store, readUsers)
+    const engine = new AutomationEngine(config, client, store, readUsers, persistConfig)
     await engine.initialize()
 
     await store.updateAccount('163', (account) => {
@@ -130,7 +132,7 @@ describe('AutomationEngine capacity synchronization', () => {
     const store = new StateStore(join(directory, 'state.json'))
     await store.initialize()
     const client = new Sub2ApiClient('http://example.test', 'test-key', 1_000)
-    const engine = new AutomationEngine(config, client, store, readUsers)
+    const engine = new AutomationEngine(config, client, store, readUsers, persistConfig)
     await engine.initialize()
 
     await store.updateAccount('163', (account) => {
@@ -210,7 +212,7 @@ describe('AutomationEngine capacity synchronization', () => {
       ...config,
       accounts: [{ ...config.accounts[0]!, reserveMode: 'percent', reserveValue: 12 }],
     }
-    const engine = new AutomationEngine(changedConfig, client, store, readUsers)
+    const engine = new AutomationEngine(changedConfig, client, store, readUsers, persistConfig)
     await engine.initialize()
 
     await store.updateAccount('163', (account) => {
@@ -274,7 +276,7 @@ describe('AutomationEngine user concurrency schedule', () => {
     const store = new StateStore(join(directory, 'state.json'))
     await store.initialize()
     const client = new Sub2ApiClient('http://example.test', 'test-key', 1_000)
-    const engine = new AutomationEngine({ ...config, userConcurrencySchedule: { ...config.userConcurrencySchedule, enabled: true } }, client, store, readUsers)
+    const engine = new AutomationEngine({ ...config, userConcurrencySchedule: { ...config.userConcurrencySchedule, enabled: true } }, client, store, readUsers, persistConfig)
     await engine.initialize()
     readUsers.mockRejectedValueOnce(new Error('read-only database unavailable'))
     const write = vi.spyOn(client, 'batchSetUserLimits')
@@ -293,7 +295,7 @@ describe('AutomationEngine user concurrency schedule', () => {
       ...config,
       userConcurrencySchedule: { ...config.userConcurrencySchedule, enabled: true, peakConcurrency: 2, idleConcurrency: 7, peakRpm: 30, idleRpm: 40, exemptUserIds: [2] },
     }
-    const engine = new AutomationEngine(enabledConfig, client, store, readUsers)
+    const engine = new AutomationEngine(enabledConfig, client, store, readUsers, persistConfig)
     await engine.initialize()
 
     readUsers.mockResolvedValue([
@@ -326,7 +328,7 @@ describe('AutomationEngine user concurrency schedule', () => {
       ...config,
       userConcurrencySchedule: { ...config.userConcurrencySchedule, enabled: true, idleConcurrency: 7, idleRpm: 40, exemptUserIds: [2] },
     }
-    const engine = new AutomationEngine(enabledConfig, client, store, readUsers)
+    const engine = new AutomationEngine(enabledConfig, client, store, readUsers, persistConfig)
     await engine.initialize()
 
     readUsers.mockResolvedValue([
@@ -351,7 +353,7 @@ describe('AutomationEngine user concurrency schedule', () => {
       ...config,
       userConcurrencySchedule: { ...config.userConcurrencySchedule, enabled: true, peakConcurrency: 2, idleConcurrency: 7, peakRpm: 30, idleRpm: 40, exemptUserIds: [] },
     }
-    const engine = new AutomationEngine(enabledConfig, client, store, readUsers)
+    const engine = new AutomationEngine(enabledConfig, client, store, readUsers, persistConfig)
     await engine.initialize()
 
     readUsers.mockResolvedValue([
@@ -373,13 +375,33 @@ describe('AutomationEngine user concurrency schedule', () => {
   })
 })
 
-it('场景-003-09/10/13：同桶仍可追加、普通估值不覆盖追加、关闭保留且新周期归零', async () => {
+it('场景-002-01/03/06：首次基线和窗口抖动保持再均分开启', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'quota-sync-baseline-')); temporaryDirectories.push(directory)
+  const store = new StateStore(join(directory, 'state.json')); await store.initialize()
+  const client = new Sub2ApiClient('http://example.test', 'test-key', 1000)
+  const enabled = { ...structuredClone(config), accounts: [{ ...config.accounts[0]!, redistributionEnabled: true }] }
+  const engine = new AutomationEngine(enabled, client, store, readUsers, persistConfig); await engine.initialize()
+  await store.updateAccount('163', account => { account.accountId = 5 })
+  let resetAt = 2_000_000_000
+  vi.spyOn(client, 'openAIQuota').mockImplementation(async () => ({ rate_limit: { primary_window: { reset_at: resetAt, used_percent: 40 } }, fetched_at: resetAt - 100000 }))
+  await engine.run('reset')
+  resetAt += 10
+  await engine.run('reset')
+  expect(engine.getConfig().accounts[0]!.redistributionEnabled).toBe(true)
+  expect(persistConfig).not.toHaveBeenCalled()
+})
+
+it('场景-002-06/003-09/10/13：主动追加不重复，新周期持久关闭，保存及重置失败可恢复', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'quota-sync-engine-')); temporaryDirectories.push(directory)
   const store = new StateStore(join(directory, 'state.json')); await store.initialize()
   const client = new Sub2ApiClient('http://example.test', 'test-key', 1000)
   const enabled: ServiceConfig = { ...structuredClone(config), accounts: [{ ...config.accounts[0]!, reserveValue: 100, redistributionEnabled: true }] }
-  const engine = new AutomationEngine(enabled, client, store, readUsers); await engine.initialize()
-  let resetAt = 2_000_000_000, usedPercent = 40, cost = 400, memberUsage = 300
+  enabled.accounts.push({ ...enabled.accounts[0]!, key: 'two', email: 'two@example.com', targetGroupIds: [14], enabled: false })
+  const configPath = join(directory, 'config.json')
+  const persist = vi.fn((next: ServiceConfig) => saveConfig(configPath, next))
+  await saveConfig(configPath, enabled)
+  const engine = new AutomationEngine(enabled, client, store, readUsers, persist); await engine.initialize()
+  let resetAt = 2_000_000_000, usedPercent = 40, cost = 400, memberUsage = 100
   await store.updateAccount('163', account => { account.accountId = 5; account.reset.observation = { resetAt, usedPercent, fetchedAt: resetAt - 100000, observedAt: new Date().toISOString() } })
   vi.spyOn(client, 'openAIQuota').mockImplementation(async () => ({ rate_limit: { primary_window: { reset_at: resetAt, used_percent: usedPercent } }, fetched_at: resetAt - 100000 }))
   vi.spyOn(client, 'accountUsage').mockImplementation(async () => ({ seven_day: { utilization: usedPercent / 100, resets_at: null, window_stats: { standard_cost: cost } } }))
@@ -394,35 +416,49 @@ it('场景-003-09/10/13：同桶仍可追加、普通估值不覆盖追加、关
   expect(update).toHaveBeenCalledTimes(2)
   memberUsage = 466.66; usedPercent = 40.5; cost = 450
   await engine.run('capacity')
-  expect(groups.map(g => g.weekly_limit_usd)).toEqual([616.66,616.66])
-  memberUsage = 616.66; usedPercent = 60; cost = 600
+  expect(groups.map(g => g.weekly_limit_usd)).toEqual([466.66,466.66])
+  memberUsage = 466.66; usedPercent = 50; cost = 1000
   await engine.run('capacity')
-  expect(groups.map(g => g.weekly_limit_usd)).toEqual([716.66,716.66])
+  expect(groups.map(g => g.weekly_limit_usd)).toEqual([599.99,599.99])
+  memberUsage = 500; usedPercent = 60; cost = 1200
+  await engine.run('capacity')
+  expect(groups.map(g => g.weekly_limit_usd)).toEqual([766.66,766.66])
   enabled.accounts[0]!.redistributionEnabled = false
-  memberUsage = 716.66
+  memberUsage = 600
   await engine.run('capacity')
-  expect(groups.map(g => g.weekly_limit_usd)).toEqual([716.66,716.66])
+  expect(groups.map(g => g.weekly_limit_usd)).toEqual([766.66,766.66])
   expect(store.snapshot().accounts['163']!.redistribution!.status).toBe('disabled')
   resetAt += 604800; usedPercent = 1; cost = 10
   enabled.accounts[0]!.redistributionEnabled = true
   const resetSubscriptions = vi.spyOn(client, 'resetSubscriptionWeekly').mockImplementation(async () => { memberUsage = 0 })
   await engine.run('capacity')
   expect(store.snapshot().accounts['163']!.redistribution!.message).toContain('重置')
+  persist.mockRejectedValueOnce(new Error('configuration storage unavailable'))
+  await engine.run('reset')
+  expect(resetSubscriptions).not.toHaveBeenCalled()
+  expect(engine.getConfig().accounts[0]!.redistributionEnabled).toBe(true)
+  expect((await loadConfig(configPath)).accounts[0]!.redistributionEnabled).toBe(true)
   update.mockRejectedValueOnce(new Error('temporary group reset failure'))
   await engine.run('reset')
   expect(resetSubscriptions).not.toHaveBeenCalled()
-  expect(store.snapshot().accounts['163']!.reset.pendingEvent?.restoreRedistributionLimits?.limitUsd).toBe(300)
+  expect(engine.getConfig().accounts.map(a => a.redistributionEnabled)).toEqual([false,true])
+  expect((await loadConfig(configPath)).accounts.map(a => a.redistributionEnabled)).toEqual([false,true])
+  expect(store.snapshot().accounts['163']!.reset.pendingEvent?.restoreRedistributionLimits?.limitUsd).toBe(633.33)
   await engine.run('reset')
   await engine.run('capacity')
-  expect(groups.map(g => g.weekly_limit_usd)).toEqual([300,300])
+  expect(groups.map(g => g.weekly_limit_usd)).toEqual([633.33,633.33])
   expect(store.snapshot().accounts['163']!.redistribution!.rounds).toBe(0)
+  expect(store.snapshot().accounts['163']!.redistribution!.status).toBe('disabled')
+  const restarted = new AutomationEngine(await loadConfig(configPath), client, store, readUsers, persist)
+  await restarted.initialize()
+  expect(restarted.getConfig().accounts[0]!.redistributionEnabled).toBe(false)
 })
 
 it('场景-003-11：同一账号的周期重置和额度追加串行执行', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'quota-sync-serial-')); temporaryDirectories.push(directory)
   const store = new StateStore(join(directory, 'state.json')); await store.initialize()
   const client = new Sub2ApiClient('http://example.test', 'test-key', 1000)
-  const engine = new AutomationEngine(config, client, store, readUsers); await engine.initialize()
+  const engine = new AutomationEngine(config, client, store, readUsers, persistConfig); await engine.initialize()
   await store.updateAccount('163', account => { account.accountId = 5 })
   let release!: () => void, entered!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })

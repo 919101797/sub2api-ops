@@ -610,7 +610,7 @@ export function SettingsPage({ dashboard }: { dashboard: DashboardResponse }) {
                       checked={account.redistributionEnabled}
                       onChange={(event) => changeAccount(index, { redistributionEnabled: event.target.checked })} />
                     <span><strong>余量自动再均分</strong>
-                      <small>有人用完后，扣除已用和预留，将估算余量按现有份数给所有成员等额追加；按容量同步间隔检查。关闭后保留本周期已发额度。</small>
+                      <small>开启并保存后主动均分扣除已用和预留的估算余量，无需等待成员用完。后续按容量同步间隔只追加新增未分配额度，关闭后保留已发额度；账号重置进入新周期后自动关闭，需重新开启。</small>
                     </span>
                   </label>
                   <label className="toggle-field span-2">

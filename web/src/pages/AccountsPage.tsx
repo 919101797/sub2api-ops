@@ -104,14 +104,15 @@ export function AccountsPage({ dashboard }: { dashboard: DashboardResponse }) {
                 <header><h3>余量自动再均分</h3><StatusPill tone={config?.enabled && config.redistributionEnabled ? account.redistribution?.status === 'failed' ? 'danger' : 'healthy' : 'neutral'}>
                   {config?.redistributionEnabled ? config.enabled ? '再均分已开启' : '再均分已暂停' : '再均分已关闭'}
                 </StatusPill></header>
-                <p>{!config?.enabled ? '账号自动化已停用，暂停追加。' : account.redistribution?.message ?? (config?.redistributionEnabled ? '等待首次检查成员额度' : '可在系统设置中按账号开启。')}</p>
+                <p>{!config?.enabled ? '账号自动化已停用，暂停追加。' : account.redistribution?.message ?? (config?.redistributionEnabled ? '等待首次检查可分配余量' : '可在系统设置中按账号开启。')}</p>
                 {account.redistribution && <dl>
                   <div><dt>本周期已完成</dt><dd>{account.redistribution.rounds} 轮</dd></div>
                   <div><dt>每份累计追加</dt><dd>{currency(account.redistribution.totalAddedPerShareUsd)}</dd></div>
                   <div><dt>扣除预留后估算余量</dt><dd>{currency(account.redistribution.remainingUsd)}</dd></div>
+                  <div><dt>待追加估算额度</dt><dd>{currency(account.redistribution.unallocatedUsd)}</dd></div>
                   <div><dt>最近追加</dt><dd>{dateTime(account.redistribution.lastAppliedAt)}</dd></div>
                 </dl>}
-                <small>有人用完后，按现有份数给所有成员等额追加。按容量同步间隔检查；余量来自周期容量估值。</small>
+                <small>开启后主动均分估算余量，无需等待成员用完。后续只追加新增未分配额度，已发额度不重复发放；按容量同步间隔检查，账号重置后自动关闭。</small>
               </section>
               <div className="group-allocation-table">
                 <header>

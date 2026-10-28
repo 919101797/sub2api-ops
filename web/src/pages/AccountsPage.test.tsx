@@ -8,10 +8,11 @@ it('场景-003-08/10：显示各账号的再均分开关、已追加轮数和剩
   const dashboard = dashboardFixture()
   dashboard.config.accounts[0]!.redistributionEnabled = true
   dashboard.accounts[0]!.redistribution = { resetAt: 2000000000, rounds: 2, totalAddedPerShareUsd: 250, remainingUsd: 300,
-    status: 'updated', message: '第 2 轮已完成，每份追加 $100.00', limits: [], lastTriggerUsage: {} }
+    status: 'updated', message: '第 2 轮已完成，每份追加 $100.00', limits: [], unallocatedUsd: 0.02 }
   render(<BrowserRouter><AccountsPage dashboard={dashboard} /></BrowserRouter>)
   expect(screen.getByText('第 2 轮已完成，每份追加 $100.00')).toBeInTheDocument()
   expect(screen.getByText('2 轮')).toBeInTheDocument()
+  expect(screen.getByText('待追加估算额度').nextElementSibling).toHaveTextContent('$0.02')
   expect(screen.getByText('再均分已开启')).toBeInTheDocument()
   expect(screen.getByText('再均分已关闭')).toBeInTheDocument()
 })
