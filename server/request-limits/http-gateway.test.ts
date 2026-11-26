@@ -9,6 +9,86 @@ import { RequestGuard } from './guard.js'
 import { RequestLimitsStore, MIB } from './policy.js'
 import { createHttpGateway } from './http-gateway.js'
 
+it('场景-012-14：HTTP Responses 续跑桌面快照，保留真实工具结果和响应流', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'gateway-codex-context-'))
+  const store = new RequestLimitsStore(join(dir, 'policy.json'))
+  await store.initialize()
+  const received: Array<{ body: string, length: string | undefined }> = []
+  const completed = 'event: response.completed\ndata: {"type":"response.completed"}\n\n'
+  const upstream = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = Buffer.concat(chunks).toString('utf8')
+    received.push({ body, length: req.headers['content-length'] })
+    if (req.url === '/v1/chat/completions') { res.end('unchanged'); return }
+    let input: Array<Record<string, unknown>>
+    try { input = JSON.parse(body).input }
+    catch { res.writeHead(400); res.end('upstream invalid JSON'); return }
+    if (input.some(item => item.type === 'function_call_output' && item.namespace === 'agent'
+      && /^(?:browser_tabs|codex_apps_)/.test(String(item.name)) && !item.call_id)) {
+      res.writeHead(400); res.end('function_call_output requires call_id'); return
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end(completed)
+  })
+  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  const spool = join(dir, 'spool')
+  const gateway = createServer(createHttpGateway(new RequestGuard(store, async () => 1),
+    `http://127.0.0.1:${(upstream.address() as { port: number }).port}`, spool))
+  await new Promise<void>(resolve => gateway.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${(gateway.address() as { port: number }).port}`
+  const snapshot = (name: string, output: string) => ({ output, name, type: 'function_call_output', namespace: 'agent' })
+  const call = { type: 'function_call', name: 'browser_tabs', call_id: 'call_real', arguments: '{}' }
+  const toolResult = { ...snapshot('browser_tabs', '真实工具结果'), call_id: 'call_real' }
+  const browserReference = '浏览器标签页 📑\n' + '内容\\\n"quoted"'.repeat(9000)
+  const pageReference = 'Companion Page snapshot part 2 of 3:\n页面正文'
+  const compacted = { type: 'compaction', encrypted_content: 'retained-context' }
+  const continueMessage = { role: 'user', content: '继续' }
+  const input = [
+    snapshot('codex_apps_open_page', '{"page_id":null}'),
+    compacted,
+    snapshot('codex_apps_selected_page_part_1_of_1', 'Companion Page snapshot part 1 of 1:\n{"page_id":null,"document_view":null}'),
+    snapshot('browser_tabs', browserReference),
+    { ...snapshot('codex_apps_selected_page_part_2_of_3', pageReference), call_id: null },
+    call,
+    toolResult,
+    continueMessage,
+  ]
+  const request = { model: 'gpt-6.2-sol', input, stream: true, metadata: { input: [snapshot('browser_tabs', 'nested')] } }
+  const original = JSON.stringify(request)
+  const send = (path: string, body: string | Uint8Array<ArrayBuffer>, headers: Record<string, string> = {}) =>
+    fetch(url + path, { method: 'POST', headers: { authorization: 'Bearer owner',
+      'content-type': 'application/json', accept: 'text/event-stream', ...headers }, body })
+  try {
+    const response = await send('/v1/responses', new Uint8Array(gzipSync(original)), { 'content-encoding': 'gzip' })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe(completed)
+    const { input: sent, ...fields } = JSON.parse(received[0]!.body)
+    const { input: _, ...originalFields } = request
+    expect(fields).toEqual(originalFields)
+    expect(sent).toEqual([compacted, {
+      type: 'message', role: 'user', content: `[Untrusted reference: browser_tabs]\n${browserReference}`,
+    }, {
+      type: 'message', role: 'user', content: `[Untrusted reference: codex_apps_selected_page_part_2_of_3]\n${pageReference}`,
+    }, call, toolResult, continueMessage])
+    expect(Number(received[0]!.length)).toBe(Buffer.byteLength(received[0]!.body))
+    const clean = JSON.stringify({ input: [call, toolResult] }, null, 2)
+    expect(await (await send('/responses', clean)).text()).toBe(completed)
+    expect(received[1]!.body).toBe(clean)
+    expect(await (await send('/v1/chat/completions', original)).text()).toBe('unchanged')
+    expect(received[2]!.body).toBe(original)
+    expect(await (await send('/v1/responses', original.slice(0, -1))).text()).toBe('upstream invalid JSON')
+    expect(received[3]!.body).toBe(original.slice(0, -1))
+    await vi.waitFor(async () => expect(await readdir(spool)).toEqual([]))
+  } finally {
+    gateway.closeAllConnections()
+    upstream.closeAllConnections()
+    await Promise.all([new Promise<void>(r => gateway.close(() => r())),
+      new Promise<void>(r => upstream.close(() => r()))])
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 it('场景-012-01/02/03/05：按真实用户限制、chunked/压缩不能绕过、并发与取消清理', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'request-gateway-'))
   const store = new RequestLimitsStore(join(dir, 'policy.json')); await store.initialize()

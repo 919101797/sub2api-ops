@@ -10,6 +10,8 @@ import { createGunzip, createBrotliDecompress, createZstdDecompress } from 'node
 import type { RequestGuard } from './guard.js'
 import { MIB, RequestLimitError } from './policy.js'
 import { startResponseHeaderKeepalive } from './response-keepalive.js'
+import { isResponsesPath } from './paths.js'
+import { normalizeCodexContext } from './codex-context.js'
 
 const hopHeaders = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
 export function cleanHttpHeaders(input: http.IncomingHttpHeaders) {
@@ -80,19 +82,38 @@ export function createHttpGateway(guard: RequestGuard, upstreamOrigin: string, s
       uploadMs = Math.round(performance.now() - started - authMs)
       if (response.destroyed) return
       if (bytes > identity.policy.largeThresholdMiB * MIB) release = guard.gate.acquire(identity.policy.maxLargeConcurrent)
+      // 只向固定内网源站发送，不接受客户端绝对 URL 或外部地址。
+      const incoming = new URL(request.url ?? '/', 'http://gateway.invalid')
+      let forwardPath = path
+      let forwardBytes = bytes
+      if (request.method === 'POST' && isResponsesPath(incoming.pathname)
+        && /^application\/json\s*(?:;|$)/i.test(String(request.headers['content-type'] ?? ''))) {
+        const abort = new AbortController()
+        const onClose = () => abort.abort()
+        response.once('close', onClose)
+        try {
+          const normalizedPath = join(directory, 'normalized-body')
+          const normalizedBytes = await normalizeCodexContext(path, normalizedPath, abort.signal)
+          if (normalizedBytes !== undefined) {
+            forwardPath = normalizedPath
+            forwardBytes = normalizedBytes
+          }
+        } finally {
+          response.off('close', onClose)
+        }
+        if (response.destroyed) return
+      }
       const headers = cleanHttpHeaders(request.headers)
       headers.host = origin.host
-      headers['content-length'] = String(bytes)
+      headers['content-length'] = String(forwardBytes)
       delete headers['content-encoding']
       // 保活期间尚不知道上游头，SSE 必须保持未压缩；出口压缩交给 Nginx。
       headers['accept-encoding'] = 'identity'
-      // 只向固定内网源站发送，不接受客户端绝对 URL 或外部地址。
-      const incoming = new URL(request.url ?? '/', 'http://gateway.invalid')
       forwardStarted = performance.now()
       keepalive = startResponseHeaderKeepalive(request, response)
       await new Promise<void>((resolve, reject) => {
         let upstreamResponse: IncomingMessage | undefined
-        const body = createReadStream(path)
+        const body = createReadStream(forwardPath)
         const up = transport.request(origin, { method: request.method, path: incoming.pathname + incoming.search, headers }, res => {
           upstreamResponse = res
           headerAt = performance.now()

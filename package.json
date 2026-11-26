@@ -1,6 +1,6 @@
 {
   "name": "sub2api-operations-console",
-  "version": "3.10.8",
+  "version": "3.10.9",
   "private": true,
   "type": "module",
   "scripts": {
@@ -36,6 +36,7 @@
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
     "react-select": "^5.10.2",
+    "stream-json": "3.9.0",
     "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
