@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { RequestLimitsStore } from '../request-limits/policy.js'
 import { RequestGuard } from '../request-limits/guard.js'
 import { createServer } from 'node:http'
@@ -10,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket, { WebSocketServer } from 'ws'
 
 import type { WsRelayConfig } from './config.js'
+import { codexCompactionRequest } from './compaction.js'
 import { createWsAuditRelay } from './server.js'
 import { WsAuditOutbox } from './outbox.js'
 
@@ -30,13 +33,21 @@ function waitForOpen(socket: WebSocket): Promise<void> {
 
 function waitForMessage(socket: WebSocket): Promise<string> {
   return new Promise((resolve, reject) => {
-    socket.once('message', (data) => resolve(data.toString()))
-    socket.once('error', reject)
-    socket.once('close', (code) => reject(new Error(`WS closed ${code} before returning a frame`)))
+    function removeListeners() {
+      socket.off('message', onMessage)
+      socket.off('error', onError)
+      socket.off('close', onClose)
+    }
+    const onMessage = (data: WebSocket.RawData) => { removeListeners(); resolve(data.toString()) }
+    const onError = (error: Error) => { removeListeners(); reject(error) }
+    const onClose = (code: number) => onError(new Error(`WS closed ${code} before returning a frame`))
+    socket.once('message', onMessage)
+    socket.once('error', onError)
+    socket.once('close', onClose)
   })
 }
 
-async function heartbeatRelay() {
+async function heartbeatRelay(onMessage?: (peer: WebSocket, data: string) => void) {
   const root = await mkdtemp(join(tmpdir(), 'ws-heartbeat-'))
   cleanup.push(() => rm(root, { recursive: true, force: true }))
   const store = new RequestLimitsStore(join(root, 'policy.json')); await store.initialize()
@@ -45,10 +56,14 @@ async function heartbeatRelay() {
   const upstream = createServer()
   const sockets = new WebSocketServer({ server: upstream })
   let upstreamMessages = 0
-  const connected = new Promise<WebSocket>(resolve => sockets.once('connection', peer => {
-    peer.on('message', data => { upstreamMessages++; peer.send(data) })
-    resolve(peer)
-  }))
+  const connected = new Promise<WebSocket>(resolve => sockets.once('connection', resolve))
+  sockets.on('connection', peer => {
+    peer.on('message', data => {
+      upstreamMessages++
+      if (onMessage) onMessage(peer, data.toString())
+      else peer.send(data)
+    })
+  })
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
   cleanup.push(() => new Promise<void>(resolve => sockets.close(() => upstream.close(() => resolve()))))
   const relay = await createWsAuditRelay({ WS_RELAY_HOST: '127.0.0.1', WS_RELAY_PORT: 0,
@@ -64,6 +79,63 @@ async function heartbeatRelay() {
   await waitForOpen(client)
   return { client, peer: await connected, guard, messages: () => upstreamMessages }
 }
+
+it('场景-007-09：只有压缩成功后的新窗口完整请求换上游，客户端与审计连续', async () => {
+  let nextPeer = 0
+  const peerIds = new Map<WebSocket, number>()
+  const received: Array<{ peer: number; payload: string }> = []
+  const persist = vi.spyOn(WsAuditOutbox.prototype, 'persist')
+  const { client, peer, guard } = await heartbeatRelay((upstream, payload) => {
+    if (!peerIds.has(upstream)) peerIds.set(upstream, ++nextPeer)
+    received.push({ peer: peerIds.get(upstream)!, payload })
+    const request = JSON.parse(payload)
+    upstream.send(request.model === 'failed' ? '{"type":"response.failed"}' : '{"type":"response.completed"}')
+  })
+  const payloads: string[] = []
+  const send = async (windowId: number, input: unknown[], fields: Record<string, unknown> = {}) => {
+    const event = waitForMessage(client)
+    const payload = JSON.stringify({
+      type: 'response.create', model: 'gpt-test', input,
+      client_metadata: { 'x-codex-window-id': `thread:${windowId}` }, ...fields,
+    }, null, 2)
+    payloads.push(payload)
+    client.send(payload)
+    await event
+  }
+  const trigger = [{ type: 'compaction_trigger' }]
+  const goal = { type: 'function_call_output', namespace: 'agent', name: 'goal_objective', output: '完成目标' }
+  const continued = [{ type: 'compaction', encrypted_content: 'opaque' }, goal]
+  await send(1, trigger, { model: 'failed' })
+  await send(2, continued)
+  await send(2, trigger)
+  await send(2, continued)
+  await send(2, trigger)
+  await send(3, continued, { previous_response_id: 'resp_linked' })
+  await send(3, trigger)
+  await send(4, continued)
+  await send(4, [goal], { previous_response_id: 'resp_current' })
+  await send(4, trigger)
+  await send(5, continued)
+  expect(received.map(item => item.peer)).toEqual([1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3])
+  await vi.waitFor(() => expect(peer.readyState).toBe(WebSocket.CLOSED))
+  expect(received.map(item => item.payload)).toEqual(payloads)
+  expect(persist.mock.calls.map(([entry]) => [entry.id, entry.payload.toString()])).toEqual(
+    payloads.map((payload, i) => [`heartbeat-test.ws.${i + 1}`, payload]),
+  )
+  expect(guard.gate.active).toBe(1)
+})
+
+it('识别大帧尾部的窗口信息，忽略正文和更深层字段中的压缩标记', async () => {
+  const payload = Buffer.from(JSON.stringify({
+    type: 'response.create',
+    input: [
+      { type: 'compaction', encrypted_content: 'x'.repeat(9 * 1024 * 1024) },
+      { type: 'message', content: [{ type: 'compaction_trigger' }], text: '压缩后继续' },
+    ],
+    client_metadata: { 'x-codex-window-id': 'thread:28' },
+  }))
+  expect(await codexCompactionRequest(payload, false)).toEqual({ kind: 'resume', windowId: 'thread:28' })
+})
 
 it('场景-007-07：真实 WS 控制帧只在传输层保活，业务请求只转发一次', async () => {
   const interval = globalThis.setInterval

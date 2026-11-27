@@ -10,6 +10,7 @@ import { maintainClientHeartbeat } from './heartbeat.js'
 import WebSocket, { WebSocketServer, type RawData } from 'ws'
 
 import type { WsRelayConfig } from './config.js'
+import { codexCompactionRequest } from './compaction.js'
 import { WsAuditDelivery, type WsAuditLogger, WsAuditOutbox } from './outbox.js'
 
 const AUDIT_ENDPOINT = '/v1/responses#websocket'
@@ -66,6 +67,30 @@ function rawDataBuffer(data: RawData): Buffer {
   throw new TypeError('Unsupported WebSocket message payload')
 }
 
+function connectUpstream(origin: string, request: IncomingMessage, protocols: string[]): WebSocket {
+  return new WebSocket(upstreamUrl(origin, request), protocols, {
+    headers: upstreamHeaders(request.headers),
+    handshakeTimeout: UPSTREAM_HANDSHAKE_TIMEOUT_MS,
+    maxPayload: HARD_MAX_MIB * MIB,
+    perMessageDeflate: true,
+  })
+}
+
+function waitForUpstreamOpen(upstream: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onClose = () => reject(new Error('WS upstream closed during context window switch'))
+    upstream.once('close', onClose)
+    upstream.once('open', () => {
+      upstream.off('close', onClose)
+      resolve()
+    })
+    upstream.once('unexpected-response', (_request, response) => {
+      response.resume()
+      upstream.terminate()
+    })
+  })
+}
+
 function sendHttpError(socket: Duplex, statusCode: number, statusMessage: string): void {
   if (!socket.writable) return
   const body = `${statusCode} ${statusMessage}\n`
@@ -120,7 +145,7 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
     response.writeHead(404).end()
   })
 
-  const bridge = (client: WebSocket, request: IncomingMessage, upstream: WebSocket, connectionId: string, identity: RequestIdentity): void => {
+  const bridge = (client: WebSocket, request: IncomingMessage, initialUpstream: WebSocket, connectionId: string, identity: RequestIdentity): void => {
     clients.add(client)
     activeConnections += 1
     let sequence = 0
@@ -129,6 +154,9 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
     const startedAt = Date.now()
     let connectionPendingBytes = 0
     const isLargeConnection = identity.maxBytes > identity.policy.largeThresholdMiB * MIB
+    const protocol = initialUpstream.protocol
+    let upstream = initialUpstream
+    let compaction: { windowId: string; completed: boolean } | null = null
 
     const finish = (): void => {
       if (closed) return
@@ -179,6 +207,19 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
           payload,
         })
         delivery.wake()
+        if (closed) return
+        const frame = await codexCompactionRequest(payload, isBinary)
+        if (closed) return
+        const rotate = compaction?.completed && frame?.kind === 'resume' && frame.windowId !== compaction.windowId
+        compaction = frame?.kind === 'compact' ? { windowId: frame.windowId, completed: false } : null
+        if (rotate) {
+          const retired = upstream
+          upstream = connectUpstream(config.WS_RELAY_UPSTREAM_ORIGIN, request, protocol ? [protocol] : [])
+          bindUpstream(upstream)
+          closePeer(retired, 1000, 'context window changed')
+          await waitForUpstreamOpen(upstream)
+          logger.info({ connectionId, sequence }, 'Codex 压缩完成，已切换 WS 上游连接')
+        }
         if (closed || upstream.readyState !== WebSocket.OPEN) throw new Error('WS upstream closed before message forwarding')
         if (upstream.bufferedAmount > MAX_BRIDGE_BUFFER_BYTES) throw new Error('WS upstream backpressure limit exceeded')
         await new Promise<void>((resolve, reject) => {
@@ -197,17 +238,35 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
       })
     })
 
-    upstream.on('message', (data, isBinary) => {
-      if (client.readyState !== WebSocket.OPEN) return
-      if (client.bufferedAmount > MAX_BRIDGE_BUFFER_BYTES) {
-        closePeer(client, 1011, 'downstream backpressure limit exceeded')
-        closePeer(upstream, 1011, 'downstream backpressure limit exceeded')
-        return
-      }
-      client.send(data, { binary: isBinary }, (error) => {
-        if (error) logger.warn({ err: error, connectionId }, 'WS 上游消息回传失败')
+    const bindUpstream = (peer: WebSocket): void => {
+      peer.on('message', (data, isBinary) => {
+        if (peer !== upstream || client.readyState !== WebSocket.OPEN) return
+        if (compaction && !compaction.completed && !isBinary) {
+          const payload = rawDataBuffer(data)
+          if (payload.includes('"response.completed"')) {
+            try {
+              compaction.completed = JSON.parse(payload.toString('utf8'))?.type === 'response.completed'
+            } catch { /* The client still receives the original frame. */ }
+          }
+        }
+        if (client.bufferedAmount > MAX_BRIDGE_BUFFER_BYTES) {
+          closePeer(client, 1011, 'downstream backpressure limit exceeded')
+          closePeer(peer, 1011, 'downstream backpressure limit exceeded')
+          return
+        }
+        client.send(data, { binary: isBinary }, (error) => {
+          if (error) logger.warn({ err: error, connectionId }, 'WS 上游消息回传失败')
+        })
       })
-    })
+      peer.on('close', (code, reason) => {
+        if (peer !== upstream) return
+        finish()
+        logger.info({ connectionId, userId: identity.userId, side: 'upstream', code, sequence, durationMs: Date.now() - startedAt }, 'WS 连接已关闭')
+        closePeer(client, code, reason)
+      })
+      peer.on('error', (error) => logger.warn({ err: error, connectionId }, 'WS 上游连接异常'))
+    }
+    bindUpstream(upstream)
 
     client.on('close', (code, reason) => {
       finish()
@@ -215,13 +274,7 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
       if (code === 1006) upstream.terminate()
       else closePeer(upstream, code, reason)
     })
-    upstream.on('close', (code, reason) => {
-      finish()
-      logger.info({ connectionId, userId: identity.userId, side: 'upstream', code, sequence, durationMs: Date.now() - startedAt }, 'WS 连接已关闭')
-      closePeer(client, code, reason)
-    })
     client.on('error', (error) => logger.warn({ err: error, connectionId }, 'WS 客户端连接异常'))
-    upstream.on('error', (error) => logger.warn({ err: error, connectionId }, 'WS 上游连接异常'))
 
     logger.info({ connectionId, path: new URL(request.url ?? '/', 'http://relay.invalid').pathname }, 'WS 审计连接已建立')
   }
@@ -251,17 +304,7 @@ export async function createWsAuditRelay(config: WsRelayConfig, logger: WsAuditL
     const release = identity.maxBytes > identity.policy.largeThresholdMiB * MIB
       ? guard.gate.acquire(identity.policy.maxLargeConcurrent) : () => {}
     socket.once('close', release)
-    const protocols = subprotocols(request)
-    const upstream = new WebSocket(
-      upstreamUrl(config.WS_RELAY_UPSTREAM_ORIGIN, request),
-      protocols.length > 0 ? protocols : undefined,
-      {
-        headers: upstreamHeaders(request.headers),
-        handshakeTimeout: UPSTREAM_HANDSHAKE_TIMEOUT_MS,
-        maxPayload: HARD_MAX_MIB * MIB,
-        perMessageDeflate: true,
-      },
-    )
+    const upstream = connectUpstream(config.WS_RELAY_UPSTREAM_ORIGIN, request, subprotocols(request))
     let settled = false
 
     const fail = (statusCode: number, statusMessage: string, error?: unknown): void => {
